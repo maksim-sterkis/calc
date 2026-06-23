@@ -1,5 +1,4 @@
 #include "Config.hpp"
-#include <cmath>
 
 // Set this to false if your online browser compiler shows corrupted text (like
 // ￢ﾈﾚ). Set this to true if your terminal environment supports raw UTF-8
@@ -30,4 +29,3 @@ bool is_function(const std::string &name) {
          name == "root" || name == "croot" || name == "approx" ||
          name == "round" || name == "solve";
 }
-

@@ -163,18 +163,22 @@ int parse_nud(ParserState &state) {
   if (tok.type == TokenType::LBRACKET) {
     ASTNode node;
     node.type = ASTNodeType::ARRAY;
-    if (state.token_idx < state.tokens.size() && state.tokens[state.token_idx].type != TokenType::RBRACKET) {
+    if (state.token_idx < state.tokens.size() &&
+        state.tokens[state.token_idx].type != TokenType::RBRACKET) {
       while (true) {
         node.args.push_back(parse_expression(state, 0));
-        if (state.error != ParseError::NONE) return -1;
-        if (state.token_idx < state.tokens.size() && state.tokens[state.token_idx].type == TokenType::COMMA) {
+        if (state.error != ParseError::NONE)
+          return -1;
+        if (state.token_idx < state.tokens.size() &&
+            state.tokens[state.token_idx].type == TokenType::COMMA) {
           state.token_idx++;
         } else {
           break;
         }
       }
     }
-    if (state.token_idx >= state.tokens.size() || state.tokens[state.token_idx].type != TokenType::RBRACKET) {
+    if (state.token_idx >= state.tokens.size() ||
+        state.tokens[state.token_idx].type != TokenType::RBRACKET) {
       state.error = ParseError::UNEXPECTED_TOKEN;
       state.error_extra = "expected ']'";
       return -1;
@@ -217,4 +221,3 @@ int parse_led(ParserState &state, int left_idx, TokenType op_type) {
   state.ast_pool.push_back(node);
   return static_cast<int>(state.ast_pool.size() - 1);
 }
-

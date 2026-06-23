@@ -1,16 +1,16 @@
-#include "Config.hpp"
-#include "Token.hpp"
-#include "ExactValue.hpp"
 #include "AST.hpp"
-#include "Tokenizer.hpp"
-#include "Parser.hpp"
+#include "Config.hpp"
+#include "Diagnostics.hpp"
 #include "Engine.hpp"
 #include "Evaluator.hpp"
-#include "Diagnostics.hpp"
+#include "ExactValue.hpp"
+#include "Parser.hpp"
+#include "Token.hpp"
+#include "Tokenizer.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <string>
-#include <algorithm>
 
 int main() {
   std::cout << "=== RadixCAS (Algebraic Computer Algebra System) ==="
@@ -34,8 +34,9 @@ int main() {
       continue;
 
     std::string lower_choice = mode_choice;
-    std::transform(lower_choice.begin(), lower_choice.end(), lower_choice.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
+    std::transform(lower_choice.begin(), lower_choice.end(),
+                   lower_choice.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
     if (lower_choice == "exit") {
       std::cout << "Goodbye from RadixCAS!\n";
       return 0;
@@ -55,7 +56,8 @@ int main() {
       std::cout << ">> Output Mode set to FRACTION.\n" << std::endl;
       break;
     } else {
-      std::cout << "Invalid choice. Please select A, B, C, or 'exit'.\n" << std::endl;
+      std::cout << "Invalid choice. Please select A, B, C, or 'exit'.\n"
+                << std::endl;
     }
   }
 

@@ -34,7 +34,8 @@ struct ExactValue {
   void simplify();
 };
 
-ExactValue make_exact(long long a, long long b, long long c, long long root, double dbl, double imag = 0.0);
+ExactValue make_exact(long long a, long long b, long long c, long long root,
+                      double dbl, double imag = 0.0);
 double to_double(const ExactValue &ev);
 ExactValue double_to_exact(double val);
 bool is_terminating_decimal(long long denominator);

@@ -1,8 +1,8 @@
 #pragma once
 #include "ExactValue.hpp"
 #include "Token.hpp"
-#include <vector>
 #include <map>
+#include <vector>
 
 extern std::map<std::string, ExactValue> global_variables;
 extern std::string current_target_var;
@@ -26,7 +26,13 @@ struct ASTNode {
 };
 
 enum class ParseError {
-  NONE, UNKNOWN_CHAR, UNEXPECTED_END, UNEXPECTED_TOKEN, EXPECTED_RPAREN, DIVIDE_BY_ZERO, UNSUPPORTED_OPERATION
+  NONE,
+  UNKNOWN_CHAR,
+  UNEXPECTED_END,
+  UNEXPECTED_TOKEN,
+  EXPECTED_RPAREN,
+  DIVIDE_BY_ZERO,
+  UNSUPPORTED_OPERATION
 };
 
 struct ParserState {

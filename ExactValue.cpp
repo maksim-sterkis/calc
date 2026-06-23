@@ -7,132 +7,131 @@
 #include <sstream>
 
 void ExactTerm::simplify() {
-    if (c == 0)
-      c = 1;
-    if (c < 0) {
-      a = -a;
-      c = -c;
-    }
-    if (a == 0 || b == 0) {
-      a = 0;
-      b = 1;
-      c = 1;
-      vars.clear();
-      is_imaginary = false;
-      return;
-    }
+  if (c == 0)
+    c = 1;
+  if (c < 0) {
+    a = -a;
+    c = -c;
+  }
+  if (a == 0 || b == 0) {
+    a = 0;
+    b = 1;
+    c = 1;
+    vars.clear();
+    is_imaginary = false;
+    return;
+  }
 
-    bool is_neg_b = (b < 0);
-    long long temp_b = std::abs(b);
-    long long d = 2;
+  bool is_neg_b = (b < 0);
+  long long temp_b = std::abs(b);
+  long long d = 2;
 
-    while (true) {
-      long long d_pow = 1;
-      bool overflow = false;
-      for (int i = 0; i < root_degree; ++i) {
-        if (d_pow > temp_b / d) {
-          overflow = true;
-          break;
-        }
-        d_pow *= d;
-      }
-      if (overflow || d_pow > temp_b)
+  while (true) {
+    long long d_pow = 1;
+    bool overflow = false;
+    for (int i = 0; i < root_degree; ++i) {
+      if (d_pow > temp_b / d) {
+        overflow = true;
         break;
-
-      while (temp_b % d_pow == 0) {
-        a *= d;
-        temp_b /= d_pow;
       }
-      d++;
+      d_pow *= d;
     }
+    if (overflow || d_pow > temp_b)
+      break;
 
-    if (is_neg_b) {
-      if (root_degree % 2 != 0) {
-        a = -a;
-        b = temp_b;
-      } else {
-        is_imaginary = !is_imaginary;
-        b = temp_b;
-      }
+    while (temp_b % d_pow == 0) {
+      a *= d;
+      temp_b /= d_pow;
+    }
+    d++;
+  }
+
+  if (is_neg_b) {
+    if (root_degree % 2 != 0) {
+      a = -a;
+      b = temp_b;
     } else {
+      is_imaginary = !is_imaginary;
       b = temp_b;
     }
-
-    std::vector<VariablePower> simplified_vars;
-    for (auto &vp : vars)
-      if (vp.power != 0)
-        simplified_vars.push_back(vp);
-
-    std::sort(simplified_vars.begin(), simplified_vars.end(),
-              [](const VariablePower &x, const VariablePower &y) {
-                return x.name < y.name;
-              });
-
-    vars.clear();
-    for (const auto &vp : simplified_vars) {
-      if (!vars.empty() && vars.back().name == vp.name)
-        vars.back().power += vp.power;
-      else
-        vars.push_back(vp);
-    }
-
-    auto it =
-        std::remove_if(vars.begin(), vars.end(),
-                       [](const VariablePower &vp) { return vp.power == 0; });
-    vars.erase(it, vars.end());
-
-    long long g = std::gcd(std::abs(a), c);
-    if (g > 0) {
-      a /= g;
-      c /= g;
-    }
+  } else {
+    b = temp_b;
   }
+
+  std::vector<VariablePower> simplified_vars;
+  for (auto &vp : vars)
+    if (vp.power != 0)
+      simplified_vars.push_back(vp);
+
+  std::sort(simplified_vars.begin(), simplified_vars.end(),
+            [](const VariablePower &x, const VariablePower &y) {
+              return x.name < y.name;
+            });
+
+  vars.clear();
+  for (const auto &vp : simplified_vars) {
+    if (!vars.empty() && vars.back().name == vp.name)
+      vars.back().power += vp.power;
+    else
+      vars.push_back(vp);
+  }
+
+  auto it =
+      std::remove_if(vars.begin(), vars.end(),
+                     [](const VariablePower &vp) { return vp.power == 0; });
+  vars.erase(it, vars.end());
+
+  long long g = std::gcd(std::abs(a), c);
+  if (g > 0) {
+    a /= g;
+    c /= g;
+  }
+}
 void ExactValue::simplify() {
-    if (!symbolic_repr.empty() || is_approx)
-      return;
+  if (!symbolic_repr.empty() || is_approx)
+    return;
 
-    std::vector<ExactTerm> new_terms;
-    for (auto &t : terms) {
-      t.simplify();
-      if (t.a == 0)
-        continue;
+  std::vector<ExactTerm> new_terms;
+  for (auto &t : terms) {
+    t.simplify();
+    if (t.a == 0)
+      continue;
 
-      bool combined = false;
-      for (auto &nt : new_terms) {
-        if (are_like_terms(nt, t)) {
-          long long new_a = nt.a * t.c + t.a * nt.c;
-          long long new_c = nt.c * t.c;
-          nt.a = new_a;
-          nt.c = new_c;
-          nt.simplify();
-          combined = true;
-          break;
-        }
-      }
-      if (!combined)
-        new_terms.push_back(t);
-    }
-
-    terms.clear();
-    double dbl_acc = 0.0, imag_acc = 0.0;
+    bool combined = false;
     for (auto &nt : new_terms) {
-      if (nt.a != 0) {
-        terms.push_back(nt);
-        double var_val = 1.0;
-        double val =
-            (static_cast<double>(nt.a) *
-             std::pow(static_cast<double>(nt.b), 1.0 / nt.root_degree) *
-             var_val) /
-            static_cast<double>(nt.c);
-        if (nt.is_imaginary)
-          imag_acc += val;
-        else
-          dbl_acc += val;
+      if (are_like_terms(nt, t)) {
+        long long new_a = nt.a * t.c + t.a * nt.c;
+        long long new_c = nt.c * t.c;
+        nt.a = new_a;
+        nt.c = new_c;
+        nt.simplify();
+        combined = true;
+        break;
       }
     }
-    cached_double = dbl_acc;
-    cached_imag = imag_acc;
+    if (!combined)
+      new_terms.push_back(t);
   }
+
+  terms.clear();
+  double dbl_acc = 0.0, imag_acc = 0.0;
+  for (auto &nt : new_terms) {
+    if (nt.a != 0) {
+      terms.push_back(nt);
+      double var_val = 1.0;
+      double val = (static_cast<double>(nt.a) *
+                    std::pow(static_cast<double>(nt.b), 1.0 / nt.root_degree) *
+                    var_val) /
+                   static_cast<double>(nt.c);
+      if (nt.is_imaginary)
+        imag_acc += val;
+      else
+        dbl_acc += val;
+    }
+  }
+  cached_double = dbl_acc;
+  cached_imag = imag_acc;
+}
 
 ExactValue make_exact(long long a, long long b, long long c, long long root,
                       double dbl, double imag) {
@@ -299,5 +298,3 @@ bool are_like_terms(const ExactTerm &t1, const ExactTerm &t2) {
   }
   return true;
 }
-
-

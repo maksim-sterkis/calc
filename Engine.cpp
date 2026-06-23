@@ -1,10 +1,8 @@
-#include <sstream>
-#include <iomanip>
-#include <numeric>
 #include "Engine.hpp"
 #include "Config.hpp"
 #include <cmath>
 #include <complex>
+#include <numeric>
 
 ExactValue add(ExactValue val1, ExactValue val2, ParserState &state) {
   if (val1.is_approx || val2.is_approx) {
@@ -271,6 +269,28 @@ ExactValue compute_root(ExactValue arg, int degree, ParserState &state) {
     return {};
   }
 
+  bool arg_has_vars = false;
+  for (const auto &t : arg.terms)
+    if (!t.vars.empty())
+      arg_has_vars = true;
+
+  if (arg_has_vars || arg.symbolic_repr.size() > 0) {
+    ExactValue sym_res;
+    ExactTerm st;
+    st.a = 1;
+    st.b = 1;
+    st.c = 1;
+    st.root_degree = 2;
+    std::string root_str = get_root_symbol(degree);
+    st.vars.push_back({(make_imaginary ? "i" : "") + root_str +
+                           (USE_UNICODE ? "" : "(") + to_exact_string(arg) +
+                           (USE_UNICODE ? "" : ")"),
+                       1});
+    sym_res.terms.push_back(st);
+    sym_res.simplify();
+    return sym_res;
+  }
+
   if (arg.terms.size() == 1 && arg.terms[0].b == 1 &&
       arg.symbolic_repr.empty() && !arg.is_approx) {
     ExactValue res;
@@ -285,16 +305,20 @@ ExactValue compute_root(ExactValue arg, int degree, ParserState &state) {
     t.vars = arg.terms[0].vars;
     t.is_imaginary = make_imaginary;
 
-    if (!t.vars.empty()) {
+    if (!t.vars.empty() || arg.symbolic_repr.size() > 0) {
       ExactValue sym_res;
+      ExactTerm st;
+      st.a = 1;
+      st.b = 1;
+      st.c = 1;
+      st.root_degree = 2;
       std::string root_str = get_root_symbol(degree);
-      sym_res.symbolic_repr = (make_imaginary ? "i" : "") + root_str +
-                              (USE_UNICODE ? "" : "(") + to_exact_string(arg) +
-                              (USE_UNICODE ? "" : ")");
-      sym_res.cached_imag =
-          make_imaginary ? std::pow(arg.cached_double, 1.0 / degree) : 0.0;
-      sym_res.cached_double =
-          make_imaginary ? 0.0 : std::pow(arg.cached_double, 1.0 / degree);
+      st.vars.push_back({(make_imaginary ? "i" : "") + root_str +
+                             (USE_UNICODE ? "" : "(") + to_exact_string(arg) +
+                             (USE_UNICODE ? "" : ")"),
+                         1});
+      sym_res.terms.push_back(st);
+      sym_res.simplify();
       return sym_res;
     }
 
@@ -321,7 +345,7 @@ ExactValue compute_root(ExactValue arg, int degree, ParserState &state) {
 
 // Global substitution helper to replace defined variable assignments
 ExactValue substitute_variables(const ExactValue &ev, ParserState &state) {
-  if (ev.is_approx)
+  if (ev.is_approx || (ev.terms.empty() && !ev.symbolic_repr.empty()))
     return ev;
 
   ExactValue result = make_exact(0, 1, 1, 2, 0.0);
@@ -373,7 +397,6 @@ ExactValue substitute_variables(const ExactValue &ev, ParserState &state) {
   }
   return result;
 }
-
 
 RationalValue get_rational_form(ExactValue ev, ParserState &state) {
   ev.simplify();
@@ -433,7 +456,7 @@ RationalValue get_rational_form(ExactValue ev, ParserState &state) {
     t_val.simplify();
 
     ExactValue scale =
-        make_exact(common_c / t.c, 1, 1, 2, (double)(common_c / t.c));
+        make_exact(common_c / t.c, 1, 1, 2, static_cast<double>(common_c) / static_cast<double>(t.c));
     ExactValue t_num = multiply(t_val, D, state);
     t_num = multiply(t_num, scale, state);
 
@@ -451,8 +474,6 @@ RationalValue get_rational_form(ExactValue ev, ParserState &state) {
   rv.is_rational = true;
   return rv;
 }
-
-
 
 std::string format_output(const ExactValue &ev, OutputMode mode) {
   ParserState dummy_state;
@@ -514,8 +535,6 @@ std::string format_output(const ExactValue &ev, OutputMode mode) {
   return "0";
 }
 
-
-
 ExactValue parse_number_string(const std::string &val) {
   size_t dot_pos = val.find('.');
   if (dot_pos == std::string::npos) {
@@ -530,5 +549,3 @@ ExactValue parse_number_string(const std::string &val) {
                       std::stod(val));
   }
 }
-
-

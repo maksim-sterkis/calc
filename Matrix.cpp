@@ -1,6 +1,5 @@
 #include "Matrix.hpp"
 #include "Engine.hpp"
-#include <cmath>
 
 Matrix::Matrix(int r, int c) : rows(r), cols(c) {
   ExactValue zero = make_exact(0, 1, 1, 2, 0.0);
@@ -18,7 +17,8 @@ bool Matrix::rref(ParserState &state) {
       return true;
 
     int i = r;
-    while (data[i][lead].cached_double == 0.0 && data[i][lead].symbolic_repr.empty() && data[i][lead].terms.empty()) {
+    while (data[i][lead].cached_double == 0.0 &&
+           data[i][lead].symbolic_repr.empty() && data[i][lead].terms.empty()) {
       i++;
       if (rows == i) {
         i = r;
@@ -31,7 +31,8 @@ bool Matrix::rref(ParserState &state) {
     std::swap(data[i], data[r]);
 
     ExactValue lv = data[r][lead];
-    if (lv.cached_double != 0.0 || !lv.terms.empty() || !lv.symbolic_repr.empty()) {
+    if (lv.cached_double != 0.0 || !lv.terms.empty() ||
+        !lv.symbolic_repr.empty()) {
       for (int c = 0; c < cols; c++) {
         data[r][c] = divide(data[r][c], lv, state);
       }
