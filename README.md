@@ -53,11 +53,12 @@ Solves systems of equations natively.
 
 ---
 
-## How to Build and Run
+## How to Build and Run (VS Code)
 
-This project is built using C++ and CMake. If you've just cloned or downloaded this repository, you'll need to generate the build files first before compiling.
+This project is built using C++ and CMake. Assuming you have cloned this repository and opened the folder in **Visual Studio Code**:
 
-Open your terminal, navigate to the project folder, and run:
+1. Open the Integrated Terminal in VS Code (`Ctrl` + `` ` `` or `Cmd` + `` ` ``).
+2. Run the following commands to generate the build files and compile the engine:
 
 ```bash
 # 1. Generate the build files (only needed the first time)
@@ -65,7 +66,18 @@ cmake -S . -B build
 
 # 2. Compile the project
 cmake --build build
+```
 
-# 3. Run the executable
+3. **Run the executable:**
+Depending on your operating system, the compiled executable will be located in slightly different places.
+
+**For Mac and Linux:**
+```bash
 ./build/calc
 ```
+
+**For Windows:**
+```cmd
+.\build\Debug\calc.exe
+```
+*(If you are using MinGW or Ninja on Windows instead of the default MSVC, it will just be `.\build\calc.exe`)*
