@@ -55,12 +55,17 @@ Solves systems of equations natively.
 
 ## How to Build and Run
 
-This project uses CMake. Whenever you modify a file or add a new `.cpp` file, you can compile and run the project using the following commands from the root directory:
+This project is built using C++ and CMake. If you've just cloned or downloaded this repository, you'll need to generate the build files first before compiling.
+
+Open your terminal, navigate to the project folder, and run:
 
 ```bash
-# Compile the project
+# 1. Generate the build files (only needed the first time)
+cmake -S . -B build
+
+# 2. Compile the project
 cmake --build build
 
-# Run the executable
+# 3. Run the executable
 ./build/calc
 ```
