@@ -45,7 +45,13 @@ Solves systems of equations natively.
 - **Logarithms:** `ln(x)`, `log(base, x)`
   - Applies logarithmic rules implicitly: `ln(e^5) - ln(e^2)` -> `3`.
 
-### 4. Mathematical Modifiers
+### 4. Calculus (Derivatives & Integrals)
+- **`derivative(expression, variable)`**: Computes the exact symbolic derivative of the expression using the power, product, quotient, and chain rules natively on the Abstract Syntax Tree.
+  - Example: `derivative(x^3 * sin(x), x)` -> `3sin(x)x^2 + cos(x)x^3`
+- **`integral(expression, variable)`**: Computes the exact indefinite integral of a standard algebraic polynomial.
+  - Example: `integral(4x^3 - 6x^2 + 2x - 5, x)` -> `x^4 - 2x^3 + x^2 - 5x`
+
+### 5. Mathematical Modifiers
 - **`approx(expression)`**: Forces the internal expression to evaluate as a decimal floating point, ignoring the global output mode setting. Example: `approx(pi * e)`.
 - **`round(expression, decimal_places)`**: Rounds the decimal output of an expression to a set number of places. Example: `round(pi, 2)` -> `3.14`.
 - **`root(expression)`**: Standard square root. Equivalent to `expression^(1/2)`.

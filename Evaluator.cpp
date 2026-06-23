@@ -1,4 +1,5 @@
 #include "Evaluator.hpp"
+#include "Calculus.hpp"
 #include "Engine.hpp"
 #include "Matrix.hpp"
 #include "Parser.hpp"
@@ -288,6 +289,42 @@ ExactValue evaluate(ParserState &state, int node_idx) {
     }
   }
   if (node.type == ASTNodeType::FUNCTION) {
+    if (node.func_name == "derivative") {
+      if (node.args.size() != 2) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra =
+            "derivative requires 2 arguments: derivative(expression, variable)";
+        return {};
+      }
+      ExactValue var_ev = evaluate(state, node.right_idx);
+      if (var_ev.terms.size() != 1 || var_ev.terms[0].vars.size() != 1) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "Target variable for derivative must be singular";
+        return {};
+      }
+      std::string target_var = var_ev.terms[0].vars[0].name;
+      int du_idx = differentiate_ast(state, node.left_idx, target_var);
+      return evaluate(state, du_idx);
+    }
+
+    if (node.func_name == "integral") {
+      if (node.args.size() != 2) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra =
+            "integral requires 2 arguments: integral(expression, variable)";
+        return {};
+      }
+      ExactValue expr = evaluate(state, node.left_idx);
+      ExactValue var_ev = evaluate(state, node.right_idx);
+      if (var_ev.terms.size() != 1 || var_ev.terms[0].vars.size() != 1) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "Target variable for integral must be singular";
+        return {};
+      }
+      std::string target_var = var_ev.terms[0].vars[0].name;
+      return integrate_polynomial(expr, target_var, state);
+    }
+
     // Linear & Quadratic rational solver
 
     if (node.func_name == "solve") {
@@ -1308,24 +1345,17 @@ ExactValue evaluate(ParserState &state, int node_idx) {
     }
 
     if (node.func_name == "ln") {
-      // Native Identity Check: ln(e^x) -> x
-      const ASTNode &arg_node = state.ast_pool[node.right_idx];
-      if (arg_node.type == ASTNodeType::BINARY && arg_node.op == '^') {
-        ExactValue base_val = evaluate(state, arg_node.left_idx);
-        if (base_val.symbolic_repr == "e") {
-          return evaluate(state, arg_node.right_idx);
-        }
-      }
-
       ExactValue arg_val = evaluate(state, node.right_idx);
       if (state.error != ParseError::NONE)
         return {};
 
-      const ASTNode &child_node = state.ast_pool[node.right_idx];
-      if (child_node.type == ASTNodeType::LITERAL &&
-          child_node.value.symbolic_repr == "e" &&
-          child_node.value.terms.empty()) {
-        return make_exact(1, 1, 1, 2, 1.0);
+      // Native Identity Check: ln(e^x) -> x or ln(e) -> 1
+      if (arg_val.terms.size() == 1 && arg_val.terms[0].a == 1 &&
+          arg_val.terms[0].b == 1 && arg_val.terms[0].c == 1 &&
+          !arg_val.terms[0].is_imaginary && arg_val.terms[0].vars.size() == 1 &&
+          arg_val.terms[0].vars[0].name == "e") {
+        return make_exact(arg_val.terms[0].vars[0].power, 1, 1, 2,
+                          arg_val.terms[0].vars[0].power);
       }
 
       if (arg_val.cached_double <= 0.0 ||

@@ -23,9 +23,9 @@ void tokenize(std::string_view input, ParserState &state) {
       while (idx < ident.length()) {
         bool matched = false;
         static const std::vector<std::string> known_words = {
-            "approx", "croot", "round", "solve", "root", "sin",
-            "cos",    "tan",   "csc",   "sec",   "cot",  "pi",
-            "ln",     "asin",  "acos",  "atan"};
+            "approx", "croot", "round", "solve", "root",       "sin",
+            "cos",    "tan",   "csc",   "sec",   "cot",        "pi",
+            "ln",     "asin",  "acos",  "atan",  "derivative", "integral"};
 
         // Prioritize numeric base logarithms like log2 or log10
         if (ident.substr(idx).starts_with("log")) {

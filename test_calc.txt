@@ -1,0 +1,3 @@
+a
+ln(e^10) - ln(e^3) + root(8)
+exit

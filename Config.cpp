@@ -27,5 +27,6 @@ bool is_function(const std::string &name) {
   return name == "sin" || name == "cos" || name == "tan" || name == "csc" ||
          name == "sec" || name == "cot" || name == "log" || name == "ln" ||
          name == "root" || name == "croot" || name == "approx" ||
-         name == "round" || name == "solve";
+         name == "round" || name == "solve" || name == "derivative" ||
+         name == "integral";
 }

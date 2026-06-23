@@ -16,7 +16,7 @@ These define the core data structures used during the parsing phase.
 * **ASTNode**: Represents a node in the Abstract Syntax Tree, which dictates the mathematical order of operations.
 
 ### 4. `Tokenizer.hpp` / `Tokenizer.cpp`
-Responsible for reading the raw string inputted by the user (e.g. `2x + 5`) and breaking it down into a linear list of `Token` objects. It also handles implicit multiplication (translating `2x` into `2 * x`).
+Responsible for reading the raw string inputted by the user (e.g. `2x + 5`) and breaking it down into a linear list of `Token` objects. It features a custom **Alphabetic Splitter** to protect keywords like `sin` and `derivative` while intelligently breaking apart adjacent variables for implicit multiplication (translating `xy` into `x * y`).
 
 ### 5. `Parser.hpp` / `Parser.cpp`
 Implements a **Pratt Parser** (Top-Down Operator Precedence parser). It takes the linear list of `Token`s from the Tokenizer and constructs a hierarchical Abstract Syntax Tree (`ASTNode`), respecting mathematical rules like PEMDAS/BODMAS.
@@ -35,15 +35,20 @@ The execution layer. It recursively walks through the Abstract Syntax Tree gener
 * Pre-processes identities (like logarithmic `ln(a) - ln(b) -> ln(a/b)`).
 * Implements the `solve()` function for isolating variables in equations (linear, quadratic, radical, exponential, trig substitutions).
 
-### 9. `Polynomial.hpp` / `Polynomial.cpp`
+### 9. `Calculus.hpp` / `Calculus.cpp`
+The Symbolic Calculus engine.
+* Dynamically traverses and intercepts the AST to calculate true mathematical derivatives (`differentiate_ast`) using power, product, quotient, and chain rules.
+* Performs reverse-power rule analytical integration on polynomials (`integrate_polynomial`).
+
+### 10. `Polynomial.hpp` / `Polynomial.cpp`
 The Multivariate Algebraic Geometry engine. 
 * Converts `ExactValue` equations into strict multivariate `Polynomial` objects.
 * Implements **Buchberger's Algorithm** to compute Gröbner Bases, which is used to decouple and solve complex non-linear systems of polynomial equations.
 
-### 10. `Matrix.hpp` / `Matrix.cpp`
+### 11. `Matrix.hpp` / `Matrix.cpp`
 The Linear Algebra engine.
 * Defines matrix objects containing `ExactValue`s.
 * Implements algorithms to reduce matrices into Reduced Row Echelon Form (RREF), primarily used for solving linear systems of equations.
 
-### 11. `Diagnostics.hpp` / `Diagnostics.cpp`
+### 12. `Diagnostics.hpp` / `Diagnostics.cpp`
 A lightweight error-handling module used to print human-readable syntax errors to the user when they type an invalid equation.

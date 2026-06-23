@@ -67,11 +67,29 @@ int parse_nud(ParserState &state) {
       ASTNode node;
       node.type = ASTNodeType::LITERAL;
       if (tok.value == "e") {
-        node.value.symbolic_repr = "e";
-        node.value.cached_double = 2.718281828459045;
+        ExactValue ev;
+        ExactTerm t;
+        t.a = 1;
+        t.b = 1;
+        t.c = 1;
+        t.root_degree = 2;
+        t.vars.push_back({"e", 1});
+        ev.terms.push_back(t);
+        ev.cached_double = 2.718281828459045;
+        ev.simplify();
+        node.value = ev;
       } else if (tok.value == "pi" || tok.value == "PI" || tok.value == "π") {
-        node.value.symbolic_repr = get_pi_symbol();
-        node.value.cached_double = std::numbers::pi;
+        ExactValue ev;
+        ExactTerm t;
+        t.a = 1;
+        t.b = 1;
+        t.c = 1;
+        t.root_degree = 2;
+        t.vars.push_back({get_pi_symbol(), 1});
+        ev.terms.push_back(t);
+        ev.cached_double = std::numbers::pi;
+        ev.simplify();
+        node.value = ev;
       } else if (tok.value == "i") {
         ExactValue ev;
         ExactTerm t;

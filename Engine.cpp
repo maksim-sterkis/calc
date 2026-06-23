@@ -15,6 +15,12 @@ ExactValue add(ExactValue val1, ExactValue val2, ParserState &state) {
 
   val1.simplify();
   val2.simplify();
+
+  bool v1_zero = val1.terms.empty() || (val1.terms.size() == 1 && val1.terms[0].a == 0);
+  if (v1_zero) return val2;
+  bool v2_zero = val2.terms.empty() || (val2.terms.size() == 1 && val2.terms[0].a == 0);
+  if (v2_zero) return val1;
+
   if (!val1.symbolic_repr.empty() || !val2.symbolic_repr.empty()) {
     ExactValue res;
     res.symbolic_repr =
@@ -44,6 +50,19 @@ ExactValue subtract(ExactValue val1, ExactValue val2, ParserState &state) {
 
   val1.simplify();
   val2.simplify();
+
+  bool v2_zero = val2.terms.empty() || (val2.terms.size() == 1 && val2.terms[0].a == 0);
+  if (v2_zero) return val1;
+  bool v1_zero = val1.terms.empty() || (val1.terms.size() == 1 && val1.terms[0].a == 0);
+  if (v1_zero) {
+      ExactValue neg_val2 = val2;
+      for(auto& t : neg_val2.terms) t.a = -t.a;
+      neg_val2.cached_double = -neg_val2.cached_double;
+      neg_val2.cached_imag = -neg_val2.cached_imag;
+      if (!neg_val2.symbolic_repr.empty()) neg_val2.symbolic_repr = "(-" + neg_val2.symbolic_repr + ")";
+      return neg_val2;
+  }
+
   if (!val1.symbolic_repr.empty() || !val2.symbolic_repr.empty()) {
     ExactValue res;
     res.symbolic_repr =
@@ -71,6 +90,21 @@ ExactValue multiply(ExactValue val1, ExactValue val2, ParserState &state) {
 
   val1.simplify();
   val2.simplify();
+  
+  bool v1_zero = val1.terms.empty() || (val1.terms.size() == 1 && val1.terms[0].a == 0);
+  bool v2_zero = val2.terms.empty() || (val2.terms.size() == 1 && val2.terms[0].a == 0);
+  if (v1_zero || v2_zero) {
+    ExactValue res;
+    res.cached_double = 0;
+    res.cached_imag = 0;
+    return res;
+  }
+  
+  bool v1_one = val1.terms.size() == 1 && val1.terms[0].a == 1 && val1.terms[0].b == 1 && val1.terms[0].c == 1 && val1.terms[0].vars.empty() && !val1.terms[0].is_imaginary && val1.symbolic_repr.empty();
+  if (v1_one) return val2;
+  bool v2_one = val2.terms.size() == 1 && val2.terms[0].a == 1 && val2.terms[0].b == 1 && val2.terms[0].c == 1 && val2.terms[0].vars.empty() && !val2.terms[0].is_imaginary && val2.symbolic_repr.empty();
+  if (v2_one) return val1;
+
   if (!val1.symbolic_repr.empty() || !val2.symbolic_repr.empty()) {
     ExactValue res;
     res.symbolic_repr =
