@@ -1,5 +1,8 @@
 #include "Evaluator.hpp"
 #include "Calculus.hpp"
+#include "HybridInt.hpp"
+#include <iostream>
+#include <functional>
 #include "Engine.hpp"
 #include "Matrix.hpp"
 #include "Parser.hpp"
@@ -287,6 +290,29 @@ ExactValue evaluate(ParserState &state, int node_idx) {
       res.simplify();
       return res;
     }
+    if (node.op == '!') {
+      ExactValue res = evaluate(state, node.left_idx);
+      if (res.terms.size() == 0) return make_exact(HybridInt(1), HybridInt(1), HybridInt(1), 2, 1.0);
+      if (res.terms.size() != 1 || res.terms[0].b != HybridInt(1) || res.terms[0].c != HybridInt(1) || res.terms[0].root_degree != 2 || res.terms[0].is_imaginary || res.terms[0].vars.size() > 0) {
+         state.error = ParseError::UNSUPPORTED_OPERATION;
+         state.error_extra = "factorial only supports non-negative integers";
+         return {};
+      }
+      if (res.terms[0].a < HybridInt(0)) {
+         state.error = ParseError::UNSUPPORTED_OPERATION;
+         state.error_extra = "factorial only supports non-negative integers";
+         return {};
+      }
+      HybridInt n = res.terms[0].a;
+      HybridInt fact = HybridInt(1);
+      HybridInt zero = HybridInt(0);
+      HybridInt one = HybridInt(1);
+      while (zero < n) {
+        fact = fact * n;
+        n = n - one;
+      }
+      return make_exact(fact, HybridInt(1), HybridInt(1), 2, fact.to_double());
+    }
   }
   if (node.type == ASTNodeType::FUNCTION) {
     if (node.func_name == "derivative") {
@@ -325,11 +351,263 @@ ExactValue evaluate(ParserState &state, int node_idx) {
       return integrate_polynomial(expr, target_var, state);
     }
 
+    if (node.func_name == "limit") {
+      if (node.args.size() != 3) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "limit requires 3 arguments: limit(expr, var, val)";
+        return {};
+      }
+      
+      int expr_idx = node.args[0];
+      ExactValue var_ev = evaluate(state, node.args[1]);
+      ExactValue val_ev = evaluate(state, node.args[2]);
+      
+      if (var_ev.terms.size() != 1 || var_ev.terms[0].vars.size() != 1) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "Target variable for limit must be singular";
+        return {};
+      }
+      std::string target_var = var_ev.terms[0].vars[0].name;
+
+      // Function to attempt limit evaluation with L'Hopital's rule
+      std::function<ExactValue(int, int)> eval_limit = [&](int e_idx, int depth) -> ExactValue {
+          if (depth > 10) {
+              state.error = ParseError::UNSUPPORTED_OPERATION;
+              state.error_extra = "limit evaluation exceeded max L'Hopital iterations";
+              return {};
+          }
+          
+          // Clone expression and substitute
+          int sub_idx = clone_and_substitute(state, e_idx, target_var, node.args[2]);
+          ExactValue eval_res = evaluate(state, sub_idx);
+          
+          // Check if Division By Zero or 0/0 occurred
+          if (state.error == ParseError::DIVIDE_BY_ZERO) {
+              state.error = ParseError::NONE; // Reset error
+              // Check if the original expression was a division
+              ASTNode e_node = state.ast_pool[e_idx];
+              if (e_node.type == ASTNodeType::BINARY && e_node.op == '/') {
+                  // Verify that numerator is 0 for 0/0 form
+                  int num_sub_idx = clone_and_substitute(state, e_node.left_idx, target_var, node.args[2]);
+                  ExactValue num_val = evaluate(state, num_sub_idx);
+                  bool is_zero = (num_val.cached_double == 0.0 && num_val.terms.empty() && num_val.symbolic_repr.empty());
+                  if (!is_zero) {
+                      ExactValue inf_res;
+                      inf_res.symbolic_repr = "Infinity (Does Not Exist)";
+                      inf_res.cached_double = __builtin_inf();
+                      inf_res.is_approx = true;
+                      return inf_res;
+                  }
+                  // We need to differentiate top and bottom
+                  int num_du = differentiate_ast(state, e_node.left_idx, target_var);
+                  int den_du = differentiate_ast(state, e_node.right_idx, target_var);
+                  
+                  // Construct new division
+                  ASTNode div_node;
+                  div_node.type = ASTNodeType::BINARY;
+                  div_node.op = '/';
+                  div_node.left_idx = num_du;
+                  div_node.right_idx = den_du;
+                  state.ast_pool.push_back(div_node);
+                  return eval_limit(state.ast_pool.size() - 1, depth + 1);
+              } else {
+                  // E.g. 1/x -> DNE
+                  state.error = ParseError::UNSUPPORTED_OPERATION;
+                  state.error_extra = "limit Does Not Exist (infinity)";
+                  return {};
+              }
+          }
+          
+          // Also need to handle 0/0 if it evaluated normally to 0/0
+          // Wait, Engine.cpp divide() sets DIVISION_BY_ZERO.
+          // Wait! What if `val_ev` is `infinity`? The engine does not support infinity yet.
+          
+          return eval_res;
+      };
+      
+      return eval_limit(expr_idx, 0);
+    }
+
+    if (node.func_name == "sum") {
+      if (node.args.size() != 4) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "sum requires 4 arguments: sum(expr, var, start, end)";
+        return {};
+      }
+      
+      int expr_idx = node.args[0];
+      ExactValue var_ev = evaluate(state, node.args[1]);
+      ExactValue start_ev = evaluate(state, node.args[2]);
+      ExactValue end_ev = evaluate(state, node.args[3]);
+      
+      if (var_ev.terms.size() != 1 || var_ev.terms[0].vars.size() != 1) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "Target variable for sum must be singular";
+        return {};
+      }
+      
+      std::string target_var = var_ev.terms[0].vars[0].name;
+      int start_val = static_cast<int>(std::round(to_double(start_ev)));
+      int end_val = static_cast<int>(std::round(to_double(end_ev)));
+      
+      if (end_val < start_val) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "end must be greater than or equal to start";
+        return {};
+      }
+      if (end_val - start_val > 1000) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "sum range cannot exceed 1000 iterations for performance";
+        return {};
+      }
+      
+      ExactValue total = make_exact(0, 1, 1, 2, 0.0);
+      for (int i = start_val; i <= end_val; ++i) {
+        ASTNode i_node;
+        i_node.type = ASTNodeType::LITERAL;
+        i_node.value = make_exact(i, 1, 1, 2, static_cast<double>(i));
+        state.ast_pool.push_back(i_node);
+        int i_idx = state.ast_pool.size() - 1;
+        
+        int subbed_idx = clone_and_substitute(state, expr_idx, target_var, i_idx);
+        ExactValue term = evaluate(state, subbed_idx);
+        if (state.error != ParseError::NONE) return {};
+        total = add(total, term, state);
+      }
+      return total;
+    }
+
+    if (node.func_name == "taylor") {
+      if (node.args.size() != 4) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "taylor requires 4 arguments: taylor(expr, var, center, degree)";
+        return {};
+      }
+      
+      int expr_idx = node.args[0];
+      ExactValue var_ev = evaluate(state, node.args[1]);
+      ExactValue center_ev = evaluate(state, node.args[2]);
+      ExactValue degree_ev = evaluate(state, node.args[3]);
+      
+      if (var_ev.terms.size() != 1 || var_ev.terms[0].vars.size() != 1) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "Target variable for taylor must be singular";
+        return {};
+      }
+      
+      std::string target_var = var_ev.terms[0].vars[0].name;
+      int degree = static_cast<int>(std::round(to_double(degree_ev)));
+      
+      if (degree < 0 || degree > 25) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "taylor degree must be between 0 and 25";
+        return {};
+      }
+      
+      ExactValue total_sum = make_exact(0, 1, 1, 2, 0.0);
+      int curr_deriv_idx = expr_idx;
+      
+      ASTNode center_node;
+      center_node.type = ASTNodeType::LITERAL;
+      center_node.value = center_ev;
+      state.ast_pool.push_back(center_node);
+      int center_node_idx = state.ast_pool.size() - 1;
+      
+      long long factorial = 1;
+      
+      for (int n = 0; n <= degree; ++n) {
+        if (n > 0) factorial *= n;
+        
+        int subbed_idx = clone_and_substitute(state, curr_deriv_idx, target_var, center_node_idx);
+        ExactValue fn_c = evaluate(state, subbed_idx);
+        
+        if (state.error != ParseError::NONE) return {};
+        
+        bool is_fn_c_zero = fn_c.terms.empty() && fn_c.symbolic_repr.empty() && std::abs(fn_c.cached_double) < 1e-9;
+        if (!is_fn_c_zero) {
+          ExactValue fact_ev = make_exact(factorial, 1, 1, 2, static_cast<double>(factorial));
+          ExactValue coef = divide(fn_c, fact_ev, state);
+          
+          ExactValue x_term;
+          ExactTerm tv; tv.a = 1; tv.b = 1; tv.c = 1; tv.root_degree = 2;
+          tv.vars.push_back({target_var, 1});
+          x_term.terms.push_back(tv);
+          x_term.cached_double = 0.0;
+          
+          ExactValue x_minus_c = subtract(x_term, center_ev, state);
+          ExactValue power_term = power(x_minus_c, n, state);
+          
+          ExactValue full_term = multiply(coef, power_term, state);
+          total_sum = add(total_sum, full_term, state);
+        }
+        
+        if (n < degree) {
+          curr_deriv_idx = differentiate_ast(state, curr_deriv_idx, target_var);
+        }
+      }
+      return total_sum;
+    }
+
+    auto check_inequality = [&](char eq_op, double val) -> bool {
+      if (std::abs(val) < 1e-9) val = 0.0;
+      if (eq_op == '<') return val < 0;
+      if (eq_op == '>') return val > 0;
+      if (eq_op == 'L') return val <= 0;
+      if (eq_op == 'G') return val >= 0;
+      return false;
+    };
+
+    auto eval_poly_at = [&](const ExactValue &poly, const std::string &var_name, double x_val) -> double {
+      double total = 0.0;
+      for (const auto &t : poly.terms) {
+        double term_val = t.a.to_double() / t.c.to_double() * std::pow(t.b.to_double(), 1.0 / t.root_degree);
+        if (t.is_imaginary) continue;
+        for (const auto &vp : t.vars) {
+          if (vp.name == var_name) {
+            term_val *= std::pow(x_val, vp.power);
+          }
+        }
+        total += term_val;
+      }
+      return total;
+    };
+
     // Linear & Quadratic rational solver
 
     if (node.func_name == "solve") {
-      ASTNode left_arg = state.ast_pool[node.left_idx];
-      ASTNode right_arg = state.ast_pool[node.right_idx];
+      int eq_idx = -1;
+      int var_idx = -1;
+      if (node.args.size() >= 1) {
+        eq_idx = node.args[0];
+        if (node.args.size() >= 2) var_idx = node.args[1];
+      } else {
+        eq_idx = node.left_idx;
+        var_idx = node.right_idx;
+      }
+      
+      if (eq_idx == -1) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "solve requires at least 1 argument";
+        return {};
+      }
+      
+      ASTNode left_arg = state.ast_pool[eq_idx];
+      ASTNode right_arg;
+      if (var_idx != -1) {
+        right_arg = state.ast_pool[var_idx];
+      } else {
+        right_arg.type = ASTNodeType::LITERAL;
+        ExactValue xv;
+        ExactTerm t; t.a = 1; t.b = 1; t.c = 1; t.root_degree = 2;
+        t.vars.push_back({"x", 1});
+        xv.terms.push_back(t);
+        xv.simplify();
+        right_arg.value = xv;
+        
+        state.ast_pool.push_back(right_arg);
+        var_idx = state.ast_pool.size() - 1;
+        right_arg = state.ast_pool.back();
+      }
 
       if (left_arg.type == ASTNodeType::ARRAY &&
           right_arg.type == ASTNodeType::ARRAY) {
@@ -696,14 +974,7 @@ ExactValue evaluate(ParserState &state, int node_idx) {
         return {};
       }
 
-      if (node.left_idx == -1 || node.right_idx == -1) {
-        state.error = ParseError::UNSUPPORTED_OPERATION;
-        state.error_extra =
-            "solve requires 2 arguments: solve(equation, variable)";
-        return {};
-      }
-
-      ExactValue var_val = evaluate(state, node.right_idx);
+      ExactValue var_val = evaluate(state, var_idx);
       std::string target_var = "";
       if (var_val.terms.size() == 1 && var_val.terms[0].vars.size() == 1 &&
           var_val.terms[0].a == 1 && var_val.terms[0].b == 1 &&
@@ -716,11 +987,12 @@ ExactValue evaluate(ParserState &state, int node_idx) {
         return {};
       }
 
-      int eq_idx = node.left_idx;
       eq_idx = simplify_ast(state, eq_idx);
 
+      char eq_op = '=';
       const ASTNode &eq_node = state.ast_pool[eq_idx];
-      if (eq_node.type == ASTNodeType::BINARY && eq_node.op == '=') {
+      if (eq_node.type == ASTNodeType::BINARY && (eq_node.op == '=' || eq_node.op == '<' || eq_node.op == '>' || eq_node.op == 'L' || eq_node.op == 'G')) {
+        eq_op = eq_node.op;
         const ASTNode &left = state.ast_pool[eq_node.left_idx];
         const ASTNode &right = state.ast_pool[eq_node.right_idx];
         if (left.type == ASTNodeType::FUNCTION &&
@@ -730,7 +1002,7 @@ ExactValue evaluate(ParserState &state, int node_idx) {
                left.func_name.starts_with("log"))) {
             ASTNode stripped_eq;
             stripped_eq.type = ASTNodeType::BINARY;
-            stripped_eq.op = '=';
+            stripped_eq.op = eq_op;
             stripped_eq.left_idx = left.right_idx;
             stripped_eq.right_idx = right.right_idx;
             state.ast_pool.push_back(stripped_eq);
@@ -750,6 +1022,7 @@ ExactValue evaluate(ParserState &state, int node_idx) {
       // Numerator = 0
       RationalValue rv = get_rational_form(eq_val, state);
       ExactValue solve_target = rv.num;
+      ExactValue den_target = rv.den;
 
       // Phase 3: Radical Equation Expansion
       std::string root_var = "";
@@ -1160,141 +1433,235 @@ ExactValue evaluate(ParserState &state, int node_idx) {
           target_var = cot_var;
       }
 
-      ExactValue a, b, c;
-      a.cached_double = 0.0;
-      b.cached_double = 0.0;
-      c.cached_double = 0.0;
-
-      for (const auto &term : solve_target.terms) {
-        int power = 0;
-        ExactTerm new_term = term;
-        auto it = std::find_if(
-            new_term.vars.begin(), new_term.vars.end(),
-            [&](const VariablePower &vp) { return vp.name == target_var; });
-        if (it != new_term.vars.end()) {
-          power = it->power;
-          new_term.vars.erase(it);
+      auto get_poly_roots = [&](ExactValue target, const std::string& var_name) -> std::vector<ExactValue> {
+        std::vector<ExactValue> rts;
+        std::map<int, ExactValue> coeffs_map;
+        int max_deg = 0;
+        
+        for (const auto &term : target.terms) {
+          int power = 0; ExactTerm new_term = term;
+          auto it = std::find_if(new_term.vars.begin(), new_term.vars.end(), [&](const VariablePower &vp) { return vp.name == var_name; });
+          if (it != new_term.vars.end()) { power = it->power; new_term.vars.erase(it); }
+          ExactValue temp;
+          if (new_term.a != 0) { temp.terms.push_back(new_term); temp.simplify(); }
+          
+          if (power > max_deg) max_deg = power;
+          if (coeffs_map.find(power) == coeffs_map.end()) coeffs_map[power] = make_exact(0, 1, 1, 2, 0.0);
+          coeffs_map[power] = add(coeffs_map[power], temp, state);
         }
-
-        ExactValue temp;
-        if (new_term.a != 0) {
-          temp.terms.push_back(new_term);
-          temp.simplify();
+        
+        ExactValue a = coeffs_map[2];
+        ExactValue b = coeffs_map[1];
+        ExactValue c = coeffs_map[0];
+        
+        if (max_deg <= 2) {
+          bool is_a_zero = (a.terms.empty() && a.symbolic_repr.empty() && a.cached_double == 0.0);
+          bool is_b_zero = (b.terms.empty() && b.symbolic_repr.empty() && b.cached_double == 0.0);
+          ExactValue zero = make_exact(0, 1, 1, 2, 0.0);
+          if (is_a_zero) {
+            if (!is_b_zero) rts.push_back(divide(subtract(zero, c, state), b, state));
+          } else {
+            ExactValue b_sq = power(b, 2, state);
+            ExactValue four_ac = multiply(make_exact(4, 1, 1, 2, 4.0), multiply(a, c, state), state);
+            ExactValue disc = subtract(b_sq, four_ac, state);
+            ExactValue root_disc = compute_root(disc, 2, state);
+            if (state.error != ParseError::NONE) return {};
+            ExactValue minus_b = subtract(zero, b, state);
+            ExactValue two_a = multiply(make_exact(2, 1, 1, 2, 2.0), a, state);
+            rts.push_back(divide(add(minus_b, root_disc, state), two_a, state));
+            rts.push_back(divide(subtract(minus_b, root_disc, state), two_a, state));
+          }
+          return rts;
         }
-
-        if (power == 0)
-          c = add(c, temp, state);
-        else if (power == 1)
-          b = add(b, temp, state);
-        else if (power == 2)
-          a = add(a, temp, state);
-        else {
-          state.error = ParseError::UNSUPPORTED_OPERATION;
-          state.error_extra =
-              "engine can only solve linear and quadratic equations";
-          return {};
+        
+        // Durand-Kerner for max_deg >= 3
+        std::vector<std::complex<double>> c_coeffs(max_deg + 1, {0.0, 0.0});
+        for (auto const& [deg, ev] : coeffs_map) {
+            c_coeffs[deg] = {to_double(ev), ev.cached_imag};
         }
+        
+        // Normalize leading coefficient
+        std::complex<double> lead = c_coeffs[max_deg];
+        if (std::abs(lead) < 1e-12) {
+            state.error = ParseError::UNSUPPORTED_OPERATION;
+            state.error_extra = "Leading coefficient evaluates to zero numerically.";
+            return {};
+        }
+        for (int i = 0; i <= max_deg; ++i) c_coeffs[i] /= lead;
+        
+        int n = max_deg;
+        std::vector<std::complex<double>> roots(n);
+        std::complex<double> z(0.4, 0.9);
+        for (int i = 0; i < n; ++i) roots[i] = std::pow(z, i);
+        
+        auto eval_poly = [&](std::complex<double> x) {
+            std::complex<double> res = 0;
+            for (int i = 0; i <= n; ++i) res += c_coeffs[i] * std::pow(x, i);
+            return res;
+        };
+        
+        for (int iter = 0; iter < 1000; ++iter) {
+            std::vector<std::complex<double>> next_roots = roots;
+            double max_err = 0;
+            for (int k = 0; k < n; ++k) {
+                std::complex<double> den = 1.0;
+                for (int j = 0; j < n; ++j) {
+                    if (j != k) den *= (roots[k] - roots[j]);
+                }
+                std::complex<double> num = eval_poly(roots[k]);
+                next_roots[k] = roots[k] - num / den;
+                max_err = std::max(max_err, std::abs(next_roots[k] - roots[k]));
+            }
+            roots = next_roots;
+            if (max_err < 1e-10) break;
+        }
+        
+        for (int i = 0; i < n; ++i) {
+            ExactValue rv;
+            rv.cached_double = roots[i].real();
+            rv.cached_imag = roots[i].imag();
+            if (std::abs(rv.cached_double) < 1e-9) rv.cached_double = 0.0;
+            if (std::abs(rv.cached_imag) < 1e-9) rv.cached_imag = 0.0;
+            rv.is_approx = true;
+            rts.push_back(rv);
+        }
+        
+        return rts;
+      };
+
+      auto parse_opaque_vars = [&](ExactValue ev) -> ExactValue {
+          if (ev.terms.empty()) return ev;
+          ExactValue parsed_ev = make_exact(0, 1, 1, 2, 0.0);
+          for (const auto& term : ev.terms) {
+              ExactValue term_val = make_exact(1, 1, 1, 2, 1.0);
+              for (const auto& vp : term.vars) {
+                  std::string name = vp.name;
+                  if (name.front() == '(' && name.back() == ')') {
+                      name = name.substr(1, name.length() - 2);
+                      auto old_tokens = state.tokens; auto old_idx = state.token_idx;
+                      state.tokens.clear(); state.token_idx = 0;
+                      tokenize(name, state);
+                      int sub_ast_idx = parse_expression(state, 0);
+                      ExactValue parsed_val = evaluate(state, sub_ast_idx);
+                      state.tokens = old_tokens; state.token_idx = old_idx;
+                      term_val = multiply(term_val, power(parsed_val, vp.power, state), state);
+                  } else {
+                      ExactValue sym_var; ExactTerm st;
+                      st.a = 1; st.b = 1; st.c = 1; st.root_degree = 2; st.vars.push_back(vp);
+                      sym_var.terms.push_back(st); sym_var.simplify();
+                      term_val = multiply(term_val, sym_var, state);
+                  }
+              }
+              ExactTerm coef_t = term;
+              coef_t.vars.clear();
+              ExactValue coef_ev; coef_ev.terms.push_back(coef_t);
+              term_val = multiply(term_val, coef_ev, state);
+              parsed_ev = add(parsed_ev, term_val, state);
+          }
+          return parsed_ev;
+      };
+
+      ExactValue parsed_solve_target = parse_opaque_vars(solve_target);
+      ExactValue parsed_den_target = parse_opaque_vars(den_target);
+
+      std::vector<ExactValue> num_roots = get_poly_roots(parsed_solve_target, target_var);
+      if (state.error != ParseError::NONE) return {};
+      std::vector<ExactValue> den_roots;
+      if (!parsed_den_target.terms.empty() && parsed_den_target.symbolic_repr.empty()) {
+          bool is_den_const = parsed_den_target.terms.size() == 1 && parsed_den_target.terms[0].vars.empty();
+          if (!is_den_const) den_roots = get_poly_roots(parsed_den_target, target_var);
       }
 
-      if (state.error != ParseError::NONE)
-        return {};
+      
+      num_roots.erase(std::remove_if(num_roots.begin(), num_roots.end(), [](const ExactValue& ev) { return std::abs(ev.cached_imag) > 1e-9; }), num_roots.end());
+      den_roots.erase(std::remove_if(den_roots.begin(), den_roots.end(), [](const ExactValue& ev) { return std::abs(ev.cached_imag) > 1e-9; }), den_roots.end());
+      
+      if (eq_op == '=') {
+          std::vector<ExactValue> valid_roots;
+          for (const auto& nr : num_roots) {
+              bool ok = true;
+              for (const auto& dr : den_roots) {
+                  if (std::abs(nr.cached_double - dr.cached_double) < 1e-9) ok = false;
+              }
+              if (ok) valid_roots.push_back(nr);
+          }
+          if (valid_roots.empty()) {
+              ExactValue res; res.symbolic_repr = "No solution"; return res;
+          }
+          ExactValue res; res.symbolic_repr = "";
+          
+          std::string core_var = target_var;
+          std::string outer_func = "";
+          size_t paren_pos = target_var.find('(');
+          if (paren_pos != std::string::npos && target_var.back() == ')') {
+            outer_func = target_var.substr(0, paren_pos);
+            core_var = target_var.substr(paren_pos + 1, target_var.length() - paren_pos - 2);
+          }
 
-      bool is_a_zero = (a.terms.empty() && a.symbolic_repr.empty());
-      bool is_b_zero = (b.terms.empty() && b.symbolic_repr.empty());
-
-      ExactValue zero = make_exact(0, 1, 1, 2, 0.0);
-
-      if (is_a_zero) {
-        if (is_b_zero) {
-          ExactValue res;
-          res.symbolic_repr = "All real numbers (Identity) or No solution";
+          for (size_t i = 0; i < valid_roots.size(); ++i) {
+              if (outer_func == "cos" || outer_func == "sin" || outer_func == "tan" || outer_func == "sec" || outer_func == "csc" || outer_func == "cot") {
+                  res.symbolic_repr += core_var + " = " + outer_func + "^-1(" + to_exact_string(valid_roots[i]) + ")";
+              } else {
+                  res.symbolic_repr += target_var + " = " + to_exact_string(valid_roots[i]);
+              }
+              if (i < valid_roots.size() - 1) res.symbolic_repr += " , ";
+          }
           return res;
-        }
-        ExactValue minus_c = subtract(zero, c, state);
-        ExactValue sol = divide(minus_c, b, state);
-        ExactValue res;
-
-        std::string core_var = target_var;
-        std::string outer_func = "";
-        size_t paren_pos = target_var.find('(');
-        if (paren_pos != std::string::npos && target_var.back() == ')') {
-          outer_func = target_var.substr(0, paren_pos);
-          core_var = target_var.substr(paren_pos + 1,
-                                       target_var.length() - paren_pos - 2);
-        }
-        if (outer_func == "cos" || outer_func == "sin" || outer_func == "tan" ||
-            outer_func == "sec" || outer_func == "csc" || outer_func == "cot") {
-          res.symbolic_repr = core_var + " = " + outer_func + "^-1(" +
-                              to_exact_string(sol) + ")";
-        } else {
-          res.symbolic_repr = target_var + " = " + to_exact_string(sol);
-        }
-
-        return res;
-      } else {
-        ExactValue b_sq = power(b, 2, state);
-        ExactValue four = make_exact(4, 1, 1, 2, 4.0);
-        ExactValue ac = multiply(a, c, state);
-        ExactValue four_ac = multiply(four, ac, state);
-        ExactValue disc = subtract(b_sq, four_ac, state);
-
-        ExactValue root_disc = compute_root(disc, 2, state);
-        if (state.error != ParseError::NONE)
-          return {};
-
-        ExactValue minus_b = subtract(zero, b, state);
-        ExactValue two = make_exact(2, 1, 1, 2, 2.0);
-        ExactValue two_a = multiply(two, a, state);
-
-        ExactValue num_plus = add(minus_b, root_disc, state);
-        ExactValue num_minus = subtract(minus_b, root_disc, state);
-
-        ExactValue sol1 = divide(num_plus, two_a, state);
-        ExactValue sol2 = divide(num_minus, two_a, state);
-
-        ExactValue res;
-        std::string s1 = to_exact_string(sol1);
-        std::string s2 = to_exact_string(sol2);
-
-        if (s1 == s2) {
-          std::string core_var = target_var;
-          std::string outer_func = "";
-          size_t paren_pos = target_var.find('(');
-          if (paren_pos != std::string::npos && target_var.back() == ')') {
-            outer_func = target_var.substr(0, paren_pos);
-            core_var = target_var.substr(paren_pos + 1,
-                                         target_var.length() - paren_pos - 2);
-          }
-          if (outer_func == "cos" || outer_func == "sin" ||
-              outer_func == "tan" || outer_func == "sec" ||
-              outer_func == "csc" || outer_func == "cot") {
-            res.symbolic_repr =
-                core_var + " = " + outer_func + "^-1(" + s1 + ")";
-          } else {
-            res.symbolic_repr = target_var + " = " + s1;
-          }
-        } else {
-          std::string core_var = target_var;
-          std::string outer_func = "";
-          size_t paren_pos = target_var.find('(');
-          if (paren_pos != std::string::npos && target_var.back() == ')') {
-            outer_func = target_var.substr(0, paren_pos);
-            core_var = target_var.substr(paren_pos + 1,
-                                         target_var.length() - paren_pos - 2);
-          }
-          if (outer_func == "cos" || outer_func == "sin" ||
-              outer_func == "tan" || outer_func == "sec" ||
-              outer_func == "csc" || outer_func == "cot") {
-            res.symbolic_repr = core_var + " = " + outer_func + "^-1(" + s1 +
-                                ") , " + core_var + " = " + outer_func +
-                                "^-1(" + s2 + ")";
-          } else {
-            res.symbolic_repr =
-                target_var + " = " + s1 + " , " + target_var + " = " + s2;
-          }
-        }
-        return res;
       }
+      
+      std::vector<ExactValue> critical_points = num_roots;
+      critical_points.insert(critical_points.end(), den_roots.begin(), den_roots.end());
+      std::sort(critical_points.begin(), critical_points.end(), [](const ExactValue& a, const ExactValue& b) { return a.cached_double < b.cached_double; });
+      
+      std::vector<double> test_pts;
+      if (critical_points.empty()) test_pts.push_back(0.0);
+      else {
+          test_pts.push_back(critical_points.front().cached_double - 1.0);
+          for (size_t i = 0; i < critical_points.size() - 1; ++i) {
+              test_pts.push_back((critical_points[i].cached_double + critical_points[i+1].cached_double) / 2.0);
+          }
+          test_pts.push_back(critical_points.back().cached_double + 1.0);
+      }
+      
+      std::string ineq_str = "";
+      auto format_pt = [&](int idx, bool is_left) -> std::string {
+          const ExactValue& pt = critical_points[idx];
+          bool is_den = false;
+          for (const auto& dr : den_roots) {
+              if (std::abs(dr.cached_double - pt.cached_double) < 1e-9) is_den = true;
+          }
+          if (eq_op == 'L' || eq_op == 'G') {
+              if (is_den) return is_left ? ("< " + to_exact_string(pt)) : (to_exact_string(pt) + " <");
+              else return is_left ? ("<= " + to_exact_string(pt)) : (to_exact_string(pt) + " <=");
+          } else {
+              return is_left ? ("< " + to_exact_string(pt)) : (to_exact_string(pt) + " <");
+          }
+      };
+
+      for (size_t i = 0; i < test_pts.size(); ++i) {
+          double num_val = eval_poly_at(parsed_solve_target, target_var, test_pts[i]);
+          double den_val = eval_poly_at(parsed_den_target, target_var, test_pts[i]);
+          bool valid = check_inequality(eq_op, den_val == 0 ? 0 : num_val / den_val);
+          if (valid) {
+              if (!ineq_str.empty()) ineq_str += " or ";
+              if (test_pts.size() == 1) {
+                  ineq_str = "All real numbers";
+              } else if (i == 0) {
+                  ineq_str += target_var + " " + format_pt(0, true);
+              } else if (i == test_pts.size() - 1) {
+                  std::string right_sym = (eq_op == 'L' || eq_op == 'G') ? ">=" : ">";
+                  bool is_den = false;
+                  for (const auto& dr : den_roots) if (std::abs(dr.cached_double - critical_points.back().cached_double) < 1e-9) is_den = true;
+                  if ((eq_op == 'L' || eq_op == 'G') && is_den) right_sym = ">";
+                  ineq_str += target_var + " " + right_sym + " " + to_exact_string(critical_points.back());
+              } else {
+                  ineq_str += format_pt(i-1, false) + " " + target_var + " " + format_pt(i, true);
+              }
+          }
+      }
+      if (ineq_str.empty()) ineq_str = "No solution";
+      ExactValue res; res.symbolic_repr = ineq_str;
+      return res;
     }
 
     if (node.func_name == "approx") {
@@ -1374,7 +1741,46 @@ ExactValue evaluate(ParserState &state, int node_idx) {
       return res;
     }
 
+    if (node.func_name == "det" || node.func_name == "invert") {
+      const ASTNode &arg_node = state.ast_pool[node.right_idx];
+      if (arg_node.type != ASTNodeType::ARRAY) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = node.func_name + " requires a matrix argument";
+        return {};
+      }
+      int rows = arg_node.args.size();
+      if (rows == 0) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "empty matrix";
+        return {};
+      }
+      const ASTNode &first_row = state.ast_pool[arg_node.args[0]];
+      if (first_row.type != ASTNodeType::ARRAY) {
+        state.error = ParseError::UNSUPPORTED_OPERATION;
+        state.error_extra = "matrix must be 2D array";
+        return {};
+      }
+      int cols = first_row.args.size();
+      Matrix mat(rows, cols);
+      for (int r = 0; r < rows; ++r) {
+        const ASTNode &row_node = state.ast_pool[arg_node.args[r]];
+        if (row_node.type != ASTNodeType::ARRAY || row_node.args.size() != cols) {
+          state.error = ParseError::UNSUPPORTED_OPERATION;
+          state.error_extra = "inconsistent matrix row length";
+          return {};
+        }
+        for (int c = 0; c < cols; ++c) {
+          ExactValue val = evaluate(state, row_node.args[c]);
+          if (state.error != ParseError::NONE) return {};
+          mat.set(r, c, val);
+        }
+      }
+      if (node.func_name == "det") return mat.det(state);
+      else return mat.invert(state);
+    }
+
     if (node.func_name == "log" || node.func_name.rfind("log", 0) == 0) {
+
       double base_val = 10.0;
       ExactValue base_ev = make_exact(10, 1, 1, 2, 10.0);
       ExactValue arg_val;
@@ -1548,6 +1954,10 @@ ExactValue evaluate(ParserState &state, int node_idx) {
 
     switch (node.op) {
     case '=':
+    case '<':
+    case '>':
+    case 'L':
+    case 'G':
       return subtract(left_val, right_val, state);
     case '+':
       return add(left_val, right_val, state);
@@ -1559,13 +1969,16 @@ ExactValue evaluate(ParserState &state, int node_idx) {
       return divide(left_val, right_val, state);
     case '^': {
       right_val.simplify();
+      if (right_val.terms.empty() && right_val.symbolic_repr.empty() && std::abs(right_val.cached_double) < 1e-9) {
+        return make_exact(1, 1, 1, 2, 1.0);
+      }
       if (right_val.terms.size() != 1 || right_val.terms[0].b != 1 ||
           right_val.terms[0].c != 1 || right_val.terms[0].is_imaginary) {
         state.error = ParseError::UNSUPPORTED_OPERATION;
         state.error_extra = "exponent must be a clean integer value";
         return {};
       }
-      return power(left_val, static_cast<int>(right_val.terms[0].a), state);
+      return power(left_val, static_cast<int>(static_cast<long long>(right_val.terms[0].a)), state);
     }
     }
   }

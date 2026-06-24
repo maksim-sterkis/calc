@@ -25,7 +25,8 @@ void tokenize(std::string_view input, ParserState &state) {
         static const std::vector<std::string> known_words = {
             "approx", "croot", "round", "solve", "root",       "sin",
             "cos",    "tan",   "csc",   "sec",   "cot",        "pi",
-            "ln",     "asin",  "acos",  "atan",  "derivative", "integral"};
+            "ln",     "asin",  "acos",  "atan",  "derivative", "integral",
+            "sum",    "taylor", "det", "invert", "limit"};
 
         // Prioritize numeric base logarithms like log2 or log10
         if (ident.substr(idx).starts_with("log")) {
@@ -98,6 +99,22 @@ void tokenize(std::string_view input, ParserState &state) {
     case '=':
       raw_tokens.push_back({TokenType::EQUALS, "="});
       break;
+    case '<':
+      if (pos < input.length() && input[pos] == '=') {
+        pos++;
+        raw_tokens.push_back({TokenType::LESS_EQUALS, "<="});
+      } else {
+        raw_tokens.push_back({TokenType::LESS_THAN, "<"});
+      }
+      break;
+    case '>':
+      if (pos < input.length() && input[pos] == '=') {
+        pos++;
+        raw_tokens.push_back({TokenType::GREATER_EQUALS, ">="});
+      } else {
+        raw_tokens.push_back({TokenType::GREATER_THAN, ">"});
+      }
+      break;
     case '+':
       raw_tokens.push_back({TokenType::PLUS, "+"});
       break;
@@ -122,12 +139,16 @@ void tokenize(std::string_view input, ParserState &state) {
     case ']':
       raw_tokens.push_back({TokenType::RBRACKET, "]"});
       break;
-    case ')':
-      raw_tokens.push_back({TokenType::RPAREN, ")"});
-      break;
     case ',':
       raw_tokens.push_back({TokenType::COMMA, ","});
       break;
+    case ')':
+      raw_tokens.push_back({TokenType::RPAREN, ")"});
+      break;
+    case '!':
+      raw_tokens.push_back({TokenType::FACTORIAL, "!"});
+      break;
+
     default:
       state.error = ParseError::UNKNOWN_CHAR;
       state.error_extra = std::string(1, c);

@@ -3,17 +3,16 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
-#include <numeric>
 #include <sstream>
 
 void ExactTerm::simplify() {
-  if (c == 0)
+  if (c == HybridInt(0))
     c = 1;
-  if (c < 0) {
+  if (c < HybridInt(0)) {
     a = -a;
     c = -c;
   }
-  if (a == 0 || b == 0) {
+  if (a == HybridInt(0) || b == HybridInt(0)) {
     a = 0;
     b = 1;
     c = 1;
@@ -22,26 +21,24 @@ void ExactTerm::simplify() {
     return;
   }
 
-  bool is_neg_b = (b < 0);
-  long long temp_b = std::abs(b);
+  bool is_neg_b = (b < HybridInt(0));
+  HybridInt temp_b = is_neg_b ? -b : b;
   long long d = 2;
 
-  while (true) {
-    long long d_pow = 1;
+  while (d <= 1000) {
+    HybridInt hd(d);
+    HybridInt d_pow(1);
     bool overflow = false;
     for (int i = 0; i < root_degree; ++i) {
-      if (d_pow > temp_b / d) {
-        overflow = true;
-        break;
-      }
-      d_pow *= d;
+      d_pow = d_pow * hd;
+      if (d_pow > temp_b) { overflow = true; break; }
     }
     if (overflow || d_pow > temp_b)
       break;
 
-    while (temp_b % d_pow == 0) {
-      a *= d;
-      temp_b /= d_pow;
+    while (temp_b % d_pow == HybridInt(0)) {
+      a = a * hd;
+      temp_b = temp_b / d_pow;
     }
     d++;
   }
@@ -57,6 +54,11 @@ void ExactTerm::simplify() {
   } else {
     b = temp_b;
   }
+
+  HybridInt gcd_val = HybridInt::gcd(a, c);
+  if (gcd_val < HybridInt(0)) gcd_val = -gcd_val;
+  a = a / gcd_val;
+  c = c / gcd_val;
 
   std::vector<VariablePower> simplified_vars;
   for (auto &vp : vars)
@@ -81,11 +83,7 @@ void ExactTerm::simplify() {
                      [](const VariablePower &vp) { return vp.power == 0; });
   vars.erase(it, vars.end());
 
-  long long g = std::gcd(std::abs(a), c);
-  if (g > 0) {
-    a /= g;
-    c /= g;
-  }
+
 }
 void ExactValue::simplify() {
   if (!symbolic_repr.empty() || is_approx)
@@ -100,8 +98,8 @@ void ExactValue::simplify() {
     bool combined = false;
     for (auto &nt : new_terms) {
       if (are_like_terms(nt, t)) {
-        long long new_a = nt.a * t.c + t.a * nt.c;
-        long long new_c = nt.c * t.c;
+        HybridInt new_a = nt.a * t.c + t.a * nt.c;
+        HybridInt new_c = nt.c * t.c;
         nt.a = new_a;
         nt.c = new_c;
         nt.simplify();
@@ -119,6 +117,12 @@ void ExactValue::simplify() {
     if (nt.a != 0) {
       terms.push_back(nt);
       double var_val = 1.0;
+      for (const auto &vp : nt.vars) {
+        double base_val = 1.0;
+        if (vp.name == "pi") base_val = 3.14159265358979323846;
+        else if (vp.name == "e") base_val = 2.71828182845904523536;
+        var_val *= std::pow(base_val, vp.power);
+      }
       double val = (static_cast<double>(nt.a) *
                     std::pow(static_cast<double>(nt.b), 1.0 / nt.root_degree) *
                     var_val) /
@@ -133,7 +137,7 @@ void ExactValue::simplify() {
   cached_imag = imag_acc;
 }
 
-ExactValue make_exact(long long a, long long b, long long c, long long root,
+ExactValue make_exact(HybridInt a, HybridInt b, HybridInt c, long long root,
                       double dbl, double imag) {
   ExactValue ev;
   ev.terms.push_back({a, b, c, root, {}, imag != 0.0});
@@ -163,14 +167,14 @@ ExactValue double_to_exact(double val) {
   return make_exact(sign * a, 1, c, 2, val);
 }
 
-bool is_terminating_decimal(long long denominator) {
-  if (denominator <= 0)
-    return false;
-  while (denominator % 2 == 0)
-    denominator /= 2;
-  while (denominator % 5 == 0)
-    denominator /= 5;
-  return denominator == 1;
+bool is_terminating_decimal(HybridInt denominator) {
+  if (denominator == HybridInt(0)) return false;
+  if (denominator < HybridInt(0)) denominator = -denominator;
+  while (denominator % HybridInt(2) == HybridInt(0))
+    denominator = denominator / HybridInt(2);
+  while (denominator % HybridInt(5) == HybridInt(0))
+    denominator = denominator / HybridInt(5);
+  return denominator == HybridInt(1);
 }
 
 std::string format_double(double val) {
@@ -221,63 +225,86 @@ bool has_variables(const ExactValue &ev) {
   return false;
 }
 
+#include <sstream>
 std::string to_exact_string(const ExactValue &ev) {
   if (!ev.symbolic_repr.empty())
     return ev.symbolic_repr;
-  if (ev.terms.empty())
+  if (ev.terms.empty()) {
+    if (ev.is_approx) {
+        std::ostringstream oss;
+        oss << ev.cached_double;
+        if (ev.cached_imag != 0) {
+            if (ev.cached_imag > 0) oss << " + " << ev.cached_imag << "i";
+            else oss << " - " << -ev.cached_imag << "i";
+        }
+        return oss.str();
+    }
     return "0";
+  }
 
   std::string res = "";
   for (size_t i = 0; i < ev.terms.size(); ++i) {
     const auto &t = ev.terms[i];
-    long long a_print = t.a;
+    HybridInt a_print = t.a;
 
     if (i > 0) {
-      if (t.a < 0) {
+      if (t.a < HybridInt(0)) {
         res += " - ";
         a_print = -t.a;
       } else {
         res += " + ";
       }
-    } else if (t.a < 0) {
+    } else if (t.a < HybridInt(0)) {
       res += "-";
       a_print = -t.a;
     }
 
-    std::string var_str = "";
+    std::string num_vars = "";
+    std::string den_vars = "";
     for (const auto &vp : t.vars) {
-      var_str += vp.name;
-      if (vp.power != 1)
-        var_str += "^" + std::to_string(vp.power);
+      if (vp.power > 0) {
+        num_vars += vp.name;
+        if (vp.power != 1) num_vars += "^" + std::to_string(vp.power);
+      } else {
+        std::string den_name = vp.name;
+        if (den_name.front() == '(' && den_name.back() == ')') {
+            den_name = den_name.substr(1, den_name.length() - 2);
+        }
+        den_vars += den_name;
+        if (vp.power != -1) den_vars += "^" + std::to_string(-vp.power);
+      }
     }
 
     std::string i_str = t.is_imaginary ? "i" : "";
     std::string num_str = "";
 
-    if (t.b == 1) {
-      if (a_print == 1 && (!var_str.empty() || t.is_imaginary))
-        num_str = i_str + var_str;
+    if (t.b == HybridInt(1)) {
+      if (a_print == HybridInt(1) && (!num_vars.empty() || t.is_imaginary))
+        num_str = i_str + num_vars;
       else
-        num_str = std::to_string(a_print) + i_str + var_str;
+        num_str = a_print.to_string() + i_str + num_vars;
     } else {
       std::string coeff = "";
-      if (a_print == 1)
-        coeff = i_str + var_str;
+      if (a_print == HybridInt(1))
+        coeff = i_str + num_vars;
       else
-        coeff = std::to_string(a_print) + i_str + var_str;
+        coeff = a_print.to_string() + i_str + num_vars;
 
       std::string rad_sym = get_root_symbol(t.root_degree);
       num_str = coeff + rad_sym + (USE_UNICODE ? "" : "(") +
-                std::to_string(t.b) + (USE_UNICODE ? "" : ")");
+                t.b.to_string() + (USE_UNICODE ? "" : ")");
     }
 
-    if (t.c == 1) {
+    if (t.c == HybridInt(1) && den_vars.empty()) {
       res += num_str;
     } else {
-      if (t.b == 1 && t.vars.empty())
-        res += std::to_string(a_print) + i_str + "/" + std::to_string(t.c);
+      std::string den_str = t.c != HybridInt(1) ? t.c.to_string() : "";
+      if (!den_vars.empty()) den_str += (den_str.empty() ? "" : "*") + den_vars;
+      
+      if (t.b == HybridInt(1) && num_vars.empty())
+        res += a_print.to_string() + i_str + "/(" + den_str + ")";
       else
-        res += "(" + num_str + ")/" + std::to_string(t.c);
+        res += "(" + num_str + ")/(" + den_str + ")";
     }
   }
   return res.empty() ? "0" : res;

@@ -1,4 +1,5 @@
 #include "Calculus.hpp"
+#include "Evaluator.hpp"
 
 static int push_literal(ParserState &state, double val) {
   ASTNode node;
@@ -133,6 +134,15 @@ int differentiate_ast(ParserState &state, int node_idx,
       int two = push_literal(state, 2.0);
       int denom = push_binary(state, '*', two, node_idx);
       outer_deriv = push_binary(state, '/', one, denom);
+    } else if (node.func_name == "taylor" || node.func_name == "sum" || node.func_name == "integral") {
+      ExactValue evaluated = evaluate(state, node_idx);
+      if (state.error != ParseError::NONE) return -1;
+      ExactValue diffed = differentiate_polynomial(evaluated, target_var, state);
+      ASTNode lit;
+      lit.type = ASTNodeType::LITERAL;
+      lit.value = diffed;
+      state.ast_pool.push_back(lit);
+      return state.ast_pool.size() - 1;
     } else {
       state.error = ParseError::UNSUPPORTED_OPERATION;
       state.error_extra = "Cannot differentiate function " + node.func_name;
@@ -143,6 +153,39 @@ int differentiate_ast(ParserState &state, int node_idx,
   }
 
   return push_literal(state, 0.0);
+}
+
+ExactValue differentiate_polynomial(const ExactValue &expr,
+                                    const std::string &target_var,
+                                    ParserState &state) {
+  ExactValue res;
+  res.cached_double = 0.0;
+  res.cached_imag = 0.0;
+
+  if (expr.is_approx) {
+    state.error = ParseError::UNSUPPORTED_OPERATION;
+    state.error_extra = "Cannot analytically differentiate approximate decimals";
+    return res;
+  }
+
+  for (const auto &term : expr.terms) {
+    ExactTerm new_t = term;
+    
+    auto it = std::find_if(new_t.vars.begin(), new_t.vars.end(),
+                           [&](const VariablePower &vp) { return vp.name == target_var; });
+    
+    if (it != new_t.vars.end() && it->power > 0) {
+      new_t.a = new_t.a * HybridInt(it->power);
+      it->power -= 1;
+      if (it->power == 0) {
+        new_t.vars.erase(it);
+      }
+      res.terms.push_back(new_t);
+    }
+  }
+
+  res.simplify();
+  return res;
 }
 
 ExactValue integrate_polynomial(const ExactValue &expr,

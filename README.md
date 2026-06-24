@@ -19,6 +19,8 @@ When you launch the calculator, you can select one of three output modes:
 - Implicit multiplication and binomial expansion: `(x + y)^2 - 2xy` -> `x^2 + y^2`
 - Imaginary Numbers (`i`): `(2 + 3i) * (2 - 3i)` -> `13`
 - Roots and Radicals: `root(18) + root(8)` -> `5root(2)`
+- Factorials (`!`): `5!` -> `120`
+- Polynomial Division: `(x^2 - 4) / (x - 1)` -> `x + 1 - 3/(x - 1)`
 
 ### Built-In Constants
 - **`pi`** (or `PI`, `π`): Evaluates symbolically, or approximately if inside trig/approx functions.
@@ -31,8 +33,10 @@ When you launch the calculator, you can select one of three output modes:
 The crown jewel of RadixCAS. Solves for a specified variable.
 - **Linear Equations:** `solve(5x - 7 = 3x + 9, x)`
 - **Quadratic Equations:** `solve(x^2 - 4x + 1 = 0, x)` (Natively applies the quadratic formula)
+- **Higher-Degree Polynomials:** `solve(x^3 - 6x^2 + 11x - 6 = 0, x)` (Uses the Durand-Kerner numerical method to compute all complex roots)
 - **Radical Equations:** `solve(root(x) + 5 = 8, x)`
 - **Trigonometric Substitution:** `solve(sin(x)^2 + cos(x) = 1, x)`
+- **Inequalities:** `solve(x^2 - 4 > 0, x)` -> `x < -2 or x > 2`
 
 ### 2. System `solve(equations_array, variables_array)`
 Solves systems of equations natively.
@@ -45,13 +49,27 @@ Solves systems of equations natively.
 - **Logarithms:** `ln(x)`, `log(base, x)`
   - Applies logarithmic rules implicitly: `ln(e^5) - ln(e^2)` -> `3`.
 
-### 4. Calculus (Derivatives & Integrals)
+### 4. Calculus (Derivatives, Integrals, Limits)
 - **`derivative(expression, variable)`**: Computes the exact symbolic derivative of the expression using the power, product, quotient, and chain rules natively on the Abstract Syntax Tree.
   - Example: `derivative(x^3 * sin(x), x)` -> `3sin(x)x^2 + cos(x)x^3`
 - **`integral(expression, variable)`**: Computes the exact indefinite integral of a standard algebraic polynomial.
   - Example: `integral(4x^3 - 6x^2 + 2x - 5, x)` -> `x^4 - 2x^3 + x^2 - 5x`
+- **`limit(expression, variable, value)`**: Computes the exact limit of a function as it approaches a value, utilizing L'Hôpital's rule where indeterminate forms occur.
+  - Example: `limit(sin(x) / x, x, 0)` -> `1`
 
-### 5. Mathematical Modifiers
+### 5. Iterations (Sums & Series)
+- **`sum(expression, variable, start, end)`**: Evaluates an exact mathematical summation across a range (capped at 1000 iterations).
+  - Example: `sum(x^2, x, 1, 5)` -> `55`
+- **`taylor(expression, variable, center, degree)`**: Computes the exact symbolic Taylor Series polynomial for a function up to a certain degree (capped at 25).
+  - Example: `taylor(sin(x), x, 0, 5)` -> `x - (x^3)/6 + (x^5)/120`
+
+### 6. Linear Algebra
+- **`det(matrix)`**: Computes the determinant of a matrix.
+  - Example: `det([[1, 2], [3, 4]])` -> `-2`
+- **`invert(matrix)`**: Computes the inverse of an invertible matrix using adjugate methods.
+  - Example: `invert([[1, 2], [3, 4]])` -> `[[-2, 1], [3/2, -1/2]]`
+
+### 7. Mathematical Modifiers
 - **`approx(expression)`**: Forces the internal expression to evaluate as a decimal floating point, ignoring the global output mode setting. Example: `approx(pi * e)`.
 - **`round(expression, decimal_places)`**: Rounds the decimal output of an expression to a set number of places. Example: `round(pi, 2)` -> `3.14`.
 - **`root(expression)`**: Standard square root. Equivalent to `expression^(1/2)`.

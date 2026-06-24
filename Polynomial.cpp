@@ -2,17 +2,8 @@
 #include <algorithm>
 #include <chrono>
 
-long long gcd(long long a, long long b) {
-  while (b != 0) {
-    long long t = b;
-    b = a % b;
-    a = t;
-  }
-  return std::abs(a);
-}
-
-Fraction::Fraction(long long n, long long d) {
-  if (d == 0) {
+Fraction::Fraction(HybridInt n, HybridInt d) {
+  if (d == HybridInt(0)) {
     num = 0;
     den = 1;
   } else {
@@ -23,16 +14,17 @@ Fraction::Fraction(long long n, long long d) {
 }
 
 void Fraction::simplify() {
-  if (den < 0) {
+  if (den < HybridInt(0)) {
     num = -num;
     den = -den;
   }
-  if (num == 0) {
+  if (num == HybridInt(0)) {
     den = 1;
   } else {
-    long long g = gcd(std::abs(num), den);
-    num /= g;
-    den /= g;
+    HybridInt g = HybridInt::gcd(num, den);
+    if (g < HybridInt(0)) g = -g;
+    num = num / g;
+    den = den / g;
   }
 }
 
@@ -58,7 +50,7 @@ bool Fraction::operator==(const Fraction &o) const {
 
 bool Fraction::operator!=(const Fraction &o) const { return !(*this == o); }
 
-bool Fraction::is_zero() const { return num == 0; }
+bool Fraction::is_zero() const { return num == HybridInt(0); }
 
 bool Monomial::operator<(const Monomial &o) const {
   // Lexicographical ordering: iterate through vars in alphabetical order.
@@ -263,11 +255,12 @@ std::string Polynomial::to_string() const {
         s += " - ";
     }
 
-    long long abs_num = std::abs(m.coeff.num);
-    if ((abs_num != 1 || m.coeff.den != 1) || m.vars.empty()) {
-      s += std::to_string(abs_num);
-      if (m.coeff.den != 1)
-        s += "/" + std::to_string(m.coeff.den);
+    HybridInt abs_num = m.coeff.num;
+    if (abs_num < HybridInt(0)) abs_num = -abs_num;
+    if ((abs_num != HybridInt(1) || m.coeff.den != HybridInt(1)) || m.vars.empty()) {
+      s += abs_num.to_string();
+      if (m.coeff.den != HybridInt(1))
+        s += "/" + m.coeff.den.to_string();
     }
 
     for (const auto &kv : m.vars) {

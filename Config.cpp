@@ -28,5 +28,6 @@ bool is_function(const std::string &name) {
          name == "sec" || name == "cot" || name == "log" || name == "ln" ||
          name == "root" || name == "croot" || name == "approx" ||
          name == "round" || name == "solve" || name == "derivative" ||
-         name == "integral";
+         name == "integral" || name == "sum" || name == "taylor" || 
+         name == "det" || name == "invert" || name == "limit";
 }

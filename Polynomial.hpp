@@ -3,10 +3,12 @@
 #include <string>
 #include <vector>
 
+#include "HybridInt.hpp"
+
 struct Fraction {
-  long long num;
-  long long den;
-  Fraction(long long n = 0, long long d = 1);
+  HybridInt num;
+  HybridInt den;
+  Fraction(HybridInt n = HybridInt(0), HybridInt d = HybridInt(1));
   void simplify();
   Fraction operator+(const Fraction &o) const;
   Fraction operator-(const Fraction &o) const;

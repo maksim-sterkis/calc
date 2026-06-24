@@ -2,6 +2,8 @@
 #include <string>
 #include <vector>
 
+#include "HybridInt.hpp"
+
 struct VariablePower {
   std::string name;
   int power = 1;
@@ -12,10 +14,10 @@ struct VariablePower {
 };
 
 struct ExactTerm {
-  long long a = 1;
-  long long b = 1;
-  long long c = 1;
-  long long root_degree = 2;
+  HybridInt a = 1;
+  HybridInt b = 1;
+  HybridInt c = 1;
+  long long root_degree = 2; // root_degree stays long long
   std::vector<VariablePower> vars;
   bool is_imaginary = false;
 
@@ -34,11 +36,11 @@ struct ExactValue {
   void simplify();
 };
 
-ExactValue make_exact(long long a, long long b, long long c, long long root,
+ExactValue make_exact(HybridInt a, HybridInt b, HybridInt c, long long root,
                       double dbl, double imag = 0.0);
 double to_double(const ExactValue &ev);
 ExactValue double_to_exact(double val);
-bool is_terminating_decimal(long long denominator);
+bool is_terminating_decimal(HybridInt denominator);
 std::string format_double(double val);
 std::string format_complex(double real, double imag);
 bool has_variables(const ExactValue &ev);

@@ -17,4 +17,6 @@ public:
   // Gaussian elimination to solve Ax = B. Modifies the matrix in place to
   // Reduced Row Echelon Form
   bool rref(ParserState &state);
+  ExactValue det(ParserState &state);
+  ExactValue invert(ParserState &state);
 };

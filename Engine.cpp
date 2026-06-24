@@ -2,7 +2,6 @@
 #include "Config.hpp"
 #include <cmath>
 #include <complex>
-#include <numeric>
 
 ExactValue add(ExactValue val1, ExactValue val2, ParserState &state) {
   if (val1.is_approx || val2.is_approx) {
@@ -16,9 +15,9 @@ ExactValue add(ExactValue val1, ExactValue val2, ParserState &state) {
   val1.simplify();
   val2.simplify();
 
-  bool v1_zero = val1.terms.empty() || (val1.terms.size() == 1 && val1.terms[0].a == 0);
+  bool v1_zero = (val1.terms.empty() && val1.symbolic_repr.empty()) || (val1.terms.size() == 1 && val1.terms[0].a == 0 && val1.symbolic_repr.empty());
   if (v1_zero) return val2;
-  bool v2_zero = val2.terms.empty() || (val2.terms.size() == 1 && val2.terms[0].a == 0);
+  bool v2_zero = (val2.terms.empty() && val2.symbolic_repr.empty()) || (val2.terms.size() == 1 && val2.terms[0].a == 0 && val2.symbolic_repr.empty());
   if (v2_zero) return val1;
 
   if (!val1.symbolic_repr.empty() || !val2.symbolic_repr.empty()) {
@@ -51,9 +50,9 @@ ExactValue subtract(ExactValue val1, ExactValue val2, ParserState &state) {
   val1.simplify();
   val2.simplify();
 
-  bool v2_zero = val2.terms.empty() || (val2.terms.size() == 1 && val2.terms[0].a == 0);
+  bool v2_zero = (val2.terms.empty() && val2.symbolic_repr.empty()) || (val2.terms.size() == 1 && val2.terms[0].a == 0 && val2.symbolic_repr.empty());
   if (v2_zero) return val1;
-  bool v1_zero = val1.terms.empty() || (val1.terms.size() == 1 && val1.terms[0].a == 0);
+  bool v1_zero = (val1.terms.empty() && val1.symbolic_repr.empty()) || (val1.terms.size() == 1 && val1.terms[0].a == 0 && val1.symbolic_repr.empty());
   if (v1_zero) {
       ExactValue neg_val2 = val2;
       for(auto& t : neg_val2.terms) t.a = -t.a;
@@ -91,8 +90,8 @@ ExactValue multiply(ExactValue val1, ExactValue val2, ParserState &state) {
   val1.simplify();
   val2.simplify();
   
-  bool v1_zero = val1.terms.empty() || (val1.terms.size() == 1 && val1.terms[0].a == 0);
-  bool v2_zero = val2.terms.empty() || (val2.terms.size() == 1 && val2.terms[0].a == 0);
+  bool v1_zero = (val1.terms.empty() && val1.symbolic_repr.empty()) || (val1.terms.size() == 1 && val1.terms[0].a == 0 && val1.symbolic_repr.empty());
+  bool v2_zero = (val2.terms.empty() && val2.symbolic_repr.empty()) || (val2.terms.size() == 1 && val2.terms[0].a == 0 && val2.symbolic_repr.empty());
   if (v1_zero || v2_zero) {
     ExactValue res;
     res.cached_double = 0;
@@ -149,9 +148,87 @@ ExactValue multiply(ExactValue val1, ExactValue val2, ParserState &state) {
   return res;
 }
 
+bool get_univariate_info(const ExactValue& ev, std::string& var_name, int& max_deg) {
+  if (ev.terms.empty() && !ev.symbolic_repr.empty()) return false;
+  var_name = "";
+  max_deg = 0;
+  for (const auto& t : ev.terms) {
+    if (t.vars.size() > 1) return false;
+    if (t.vars.size() == 1) {
+      if (var_name.empty()) var_name = t.vars[0].name;
+      else if (var_name != t.vars[0].name) return false;
+      if (t.vars[0].power > max_deg) max_deg = t.vars[0].power;
+      if (t.vars[0].power < 0) return false;
+    }
+    if (t.c != 1 || t.root_degree != 2 || t.is_imaginary) return false;
+  }
+  return true;
+}
+
+ExactTerm get_leading_term(const ExactValue& ev, const std::string& var_name, int deg) {
+  ExactTerm res;
+  res.a = 0; res.b = 1; res.c = 1; res.root_degree = 2;
+  for (const auto& t : ev.terms) {
+    int d = 0;
+    if (!t.vars.empty() && t.vars[0].name == var_name) d = t.vars[0].power;
+    if (d == deg) return t;
+  }
+  return res;
+}
+
+ExactTerm divide_terms(const ExactTerm& num, const ExactTerm& den) {
+  ExactTerm res;
+  res.a = num.a * den.b;
+  res.b = num.b * den.a;
+  res.c = 1; res.root_degree = 2;
+  if (res.b < HybridInt(0)) { res.a = -res.a; res.b = -res.b; }
+  int n_deg = num.vars.empty() ? 0 : num.vars[0].power;
+  int d_deg = den.vars.empty() ? 0 : den.vars[0].power;
+  int r_deg = n_deg - d_deg;
+  if (r_deg > 0) res.vars.push_back({num.vars.empty() ? den.vars[0].name : num.vars[0].name, r_deg});
+  return res;
+}
+
+bool poly_divide(ExactValue num, ExactValue den, ExactValue& quotient, ExactValue& remainder, ParserState& state) {
+  std::string n_var, d_var;
+  int n_deg = 0, d_deg = 0;
+  if (den.terms.size() <= 1) return false;
+  if (!get_univariate_info(num, n_var, n_deg)) return false;
+  if (!get_univariate_info(den, d_var, d_deg)) return false;
+  if (!n_var.empty() && !d_var.empty() && n_var != d_var) return false;
+  std::string var_name = n_var.empty() ? d_var : n_var;
+  
+  quotient = make_exact(0, 1, 1, 2, 0);
+  remainder = num;
+  int r_deg = n_deg;
+  
+  while (r_deg >= d_deg) {
+    ExactTerm r_lead = get_leading_term(remainder, var_name, r_deg);
+    if (r_lead.a == 0) { r_deg--; continue; }
+    
+    ExactTerm d_lead = get_leading_term(den, var_name, d_deg);
+    if (d_lead.a == 0) break;
+    ExactTerm q_term = divide_terms(r_lead, d_lead);
+    ExactValue q_val; q_val.terms.push_back(q_term);
+    
+    quotient = add(quotient, q_val, state);
+    ExactValue sub = multiply(den, q_val, state);
+    remainder = subtract(remainder, sub, state);
+    
+    std::string rem_var; int new_r_deg;
+    if (!get_univariate_info(remainder, rem_var, new_r_deg)) break;
+    
+    if (new_r_deg == r_deg) r_deg--;
+    else r_deg = new_r_deg;
+    
+    if ((remainder.terms.empty() && remainder.symbolic_repr.empty()) || (remainder.terms.size() == 1 && remainder.terms[0].a == 0 && remainder.symbolic_repr.empty())) break;
+  }
+  return true;
+}
+
 ExactValue divide(ExactValue val1, ExactValue val2, ParserState &state) {
-  if ((val2.cached_double == 0.0 && val2.cached_imag == 0.0) ||
-      (val2.symbolic_repr.empty() && val2.terms.empty())) {
+  bool is_zero = val2.terms.empty() && val2.symbolic_repr.empty() && val2.cached_double == 0.0 && val2.cached_imag == 0.0;
+  if (is_zero) {
     state.error = ParseError::DIVIDE_BY_ZERO;
     return {};
   }
@@ -173,18 +250,46 @@ ExactValue divide(ExactValue val1, ExactValue val2, ParserState &state) {
 
   val1.simplify();
   val2.simplify();
-  if (!val1.symbolic_repr.empty() || !val2.symbolic_repr.empty() ||
-      val2.terms.size() > 1) {
-    ExactValue res;
-    res.symbolic_repr =
-        "(" + to_exact_string(val1) + " / " + to_exact_string(val2) + ")";
-    res.cached_double = (val1.cached_double * val2.cached_double +
-                         val1.cached_imag * val2.cached_imag) /
-                        denom_mag;
-    res.cached_imag = (val1.cached_imag * val2.cached_double -
-                       val1.cached_double * val2.cached_imag) /
-                      denom_mag;
-    return res;
+  if (!val1.symbolic_repr.empty() || !val2.symbolic_repr.empty() || val2.terms.size() > 1) {
+    double res_dbl = (val1.cached_double * val2.cached_double + val1.cached_imag * val2.cached_imag) / denom_mag;
+    double res_img = (val1.cached_imag * val2.cached_double - val1.cached_double * val2.cached_imag) / denom_mag;
+
+    ExactValue q, r;
+    if (val1.symbolic_repr.empty() && val2.symbolic_repr.empty() && poly_divide(val1, val2, q, r, state)) {
+      bool r_zero = (r.terms.empty() && r.symbolic_repr.empty()) || (r.terms.size() == 1 && r.terms[0].a == 0 && r.symbolic_repr.empty());
+      if (r_zero) {
+        q.cached_double = res_dbl;
+        q.cached_imag = res_img;
+        return q;
+      } else {
+        ExactTerm den_t;
+        den_t.a = 1; den_t.b = 1; den_t.c = 1; den_t.root_degree = 2;
+        den_t.vars.push_back({"(" + to_exact_string(val2) + ")", -1});
+        ExactValue inv_val2;
+        inv_val2.terms.push_back(den_t);
+        inv_val2.cached_double = 1.0 / denom_mag;
+        inv_val2.cached_imag = 0;
+        ExactValue r_div_den = multiply(r, inv_val2, state);
+        return add(q, r_div_den, state);
+      }
+    }
+
+    if (val1.symbolic_repr.empty() && val2.symbolic_repr.empty() && val2.terms.size() > 1) {
+      ExactTerm den_t;
+      den_t.a = 1; den_t.b = 1; den_t.c = 1; den_t.root_degree = 2;
+      den_t.vars.push_back({"(" + to_exact_string(val2) + ")", -1});
+      ExactValue inv_val2;
+      inv_val2.terms.push_back(den_t);
+      inv_val2.cached_double = 1.0 / denom_mag;
+      inv_val2.cached_imag = 0;
+      return multiply(val1, inv_val2, state);
+    }
+
+    ExactValue sym_res;
+    sym_res.symbolic_repr = "(" + to_exact_string(val1) + " / " + to_exact_string(val2) + ")";
+    sym_res.cached_double = res_dbl;
+    sym_res.cached_imag = res_img;
+    return sym_res;
   }
 
   ExactValue res;
@@ -207,11 +312,11 @@ ExactValue divide(ExactValue val1, ExactValue val2, ParserState &state) {
       return sym;
     }
     ExactTerm new_t;
-    long long b2_power = 1;
+    HybridInt b2_power(1);
     for (int i = 0; i < den.root_degree - 1; ++i)
-      b2_power *= den.b;
+      b2_power = b2_power * den.b;
 
-    long long sign_mult = 1;
+    HybridInt sign_mult(1);
     if (den.is_imaginary) {
       new_t.is_imaginary = !num.is_imaginary;
       sign_mult = num.is_imaginary ? 1 : -1;
@@ -456,10 +561,10 @@ RationalValue get_rational_form(ExactValue ev, ParserState &state) {
     return rv;
 
   std::map<std::string, int> den_vars;
-  long long common_c = 1;
+  HybridInt common_c(1);
 
   for (const auto &t : ev.terms) {
-    common_c = std::lcm(common_c, t.c);
+    common_c = HybridInt::lcm(common_c, t.c);
     for (const auto &vp : t.vars) {
       if (vp.power < 0) {
         int den_pow = -vp.power;
@@ -511,6 +616,20 @@ RationalValue get_rational_form(ExactValue ev, ParserState &state) {
 
 std::string format_output(const ExactValue &ev, OutputMode mode) {
   ParserState dummy_state;
+  
+  bool has_pos = false;
+  bool has_neg = false;
+  for (const auto &t : ev.terms) {
+      for (const auto &vp : t.vars) {
+          if (vp.power > 0) has_pos = true;
+          if (vp.power < 0) has_neg = true;
+      }
+  }
+  
+  if (has_pos && has_neg && mode == OutputMode::AUTO) {
+      return to_exact_string(ev);
+  }
+  
   RationalValue rv = get_rational_form(ev, dummy_state);
   if (rv.is_rational) {
     if (mode == OutputMode::DECIMAL) {
@@ -525,6 +644,9 @@ std::string format_output(const ExactValue &ev, OutputMode mode) {
   if (!ev.symbolic_repr.empty() || ev.is_approx) {
     if (mode == OutputMode::AUTO && !ev.is_approx) {
       if (ev.symbolic_repr.find("=") != std::string::npos ||
+          ev.symbolic_repr.find("<") != std::string::npos ||
+          ev.symbolic_repr.find(">") != std::string::npos ||
+          ev.symbolic_repr.find("numbers") != std::string::npos ||
           ev.symbolic_repr.find("solution") != std::string::npos)
         return ev.symbolic_repr;
       return ev.symbolic_repr + " (~" +
@@ -542,9 +664,22 @@ std::string format_output(const ExactValue &ev, OutputMode mode) {
   case OutputMode::FRACTION:
     return to_exact_string(ev);
   case OutputMode::AUTO: {
-    if (has_variables(ev))
-      return to_exact_string(ev);
-
+    if (has_variables(ev)) {
+      bool only_constants = true;
+      for (const auto &t : ev.terms) {
+        for (const auto &vp : t.vars) {
+          if (vp.name != "pi" && vp.name != "e") {
+            only_constants = false;
+            break;
+          }
+        }
+        if (!only_constants) break;
+      }
+      if (!only_constants)
+        return to_exact_string(ev);
+      else
+        return to_exact_string(ev) + " (~" + format_complex(ev.cached_double, ev.cached_imag) + ")";
+    }
     bool is_simple = false;
     if (ev.terms.size() == 1 && ev.terms[0].b == 1) {
       if (ev.terms[0].c == 1 || is_terminating_decimal(ev.terms[0].c))
@@ -572,14 +707,15 @@ std::string format_output(const ExactValue &ev, OutputMode mode) {
 ExactValue parse_number_string(const std::string &val) {
   size_t dot_pos = val.find('.');
   if (dot_pos == std::string::npos) {
-    return make_exact(std::stoll(val), 1, 1, 2, std::stod(val));
+    return make_exact(HybridInt(val), 1, 1, 2, std::stod(val));
   } else {
     std::string whole = val.substr(0, dot_pos);
     std::string frac = val.substr(dot_pos + 1);
-    long long denominator = 1;
-    for (size_t i = 0; i < frac.length(); ++i)
-      denominator *= 10;
-    return make_exact(std::stoll(whole + frac), 1, denominator, 2,
+    HybridInt denominator(1);
+    for (int i = 0; i < frac.length(); ++i) {
+      denominator = denominator * HybridInt(10);
+    }
+    return make_exact(HybridInt(whole + frac), 1, denominator, 2,
                       std::stod(val));
   }
 }

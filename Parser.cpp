@@ -6,6 +6,10 @@
 int get_precedence(TokenType type) {
   switch (type) {
   case TokenType::EQUALS:
+  case TokenType::LESS_THAN:
+  case TokenType::GREATER_THAN:
+  case TokenType::LESS_EQUALS:
+  case TokenType::GREATER_EQUALS:
     return 5;
   case TokenType::PLUS:
   case TokenType::MINUS:
@@ -15,6 +19,8 @@ int get_precedence(TokenType type) {
     return 20;
   case TokenType::POWER:
     return 30;
+  case TokenType::FACTORIAL:
+    return 40;
   default:
     return 0;
   }
@@ -111,7 +117,9 @@ int parse_nud(ParserState &state) {
         t.root_degree = 2;
         t.vars.push_back({tok.value, 1});
         ev.terms.push_back(t);
-        ev.cached_double = 1.0;
+        if (tok.value == "pi") ev.cached_double = std::numbers::pi;
+        else if (tok.value == "e") ev.cached_double = std::numbers::e;
+        else ev.cached_double = 1.0;
         ev.simplify();
         node.value = ev;
       }
@@ -230,6 +238,22 @@ int parse_led(ParserState &state, int left_idx, TokenType op_type) {
     node.op = '^';
   else if (op_type == TokenType::EQUALS)
     node.op = '=';
+  else if (op_type == TokenType::LESS_THAN)
+    node.op = '<';
+  else if (op_type == TokenType::GREATER_THAN)
+    node.op = '>';
+  else if (op_type == TokenType::LESS_EQUALS)
+    node.op = 'L'; // 'L' for <=
+  else if (op_type == TokenType::GREATER_EQUALS)
+    node.op = 'G'; // 'G' for >=
+  else if (op_type == TokenType::FACTORIAL)
+    node.op = '!';
+
+  if (op_type == TokenType::FACTORIAL) {
+    node.type = ASTNodeType::UNARY;
+    state.ast_pool.push_back(node);
+    return static_cast<int>(state.ast_pool.size() - 1);
+  }
 
   int p = get_precedence(op_type);
   if (op_type == TokenType::POWER)
