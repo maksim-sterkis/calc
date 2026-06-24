@@ -74,6 +74,7 @@ int main() {
       break;
     if (expr == "exit" || expr == "quit")
       break;
+
     if (expr.empty())
       continue;
 

@@ -1838,7 +1838,18 @@ ExactValue evaluate(ParserState &state, int node_idx) {
     if (state.error != ParseError::NONE)
       return {};
 
+    bool only_pi = true;
+    bool has_pi = false;
     if (has_variables(arg_val)) {
+        for (const auto &t : arg_val.terms) {
+            for (const auto &vp : t.vars) {
+                if (vp.name == "pi") has_pi = true;
+                else if (vp.name != "e") only_pi = false;
+            }
+        }
+    }
+    
+    if (has_variables(arg_val) && (!has_pi || !only_pi)) {
       ExactValue sym_res;
       ExactTerm st;
       st.a = 1;
@@ -1853,6 +1864,9 @@ ExactValue evaluate(ParserState &state, int node_idx) {
     }
 
     double arg_dbl = to_double(arg_val);
+    if (has_pi && only_pi) {
+        arg_dbl = arg_dbl * 180.0 / std::numbers::pi;
+    }
     double norm_angle = std::fmod(arg_dbl, 360.0);
     if (norm_angle < 0)
       norm_angle += 360.0;
